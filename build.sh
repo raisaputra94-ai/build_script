@@ -20,7 +20,7 @@ repo init -u https://github.com/LineageOS-Revived/android.git \
 rm -rf .repo/local_manifests
 git clone -q https://github.com/raisaputra94-ai/rmx1805_manifest.git .repo/local_manifests
 
-# Sync (run twice like bimuafaq does, for reliability)
+# Sync
 for i in 1 2; do /opt/crave/resync.sh; done
 
 # Build
