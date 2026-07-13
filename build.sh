@@ -1,13 +1,12 @@
 #!/bin/bash
+set -e
 
-# Install missing ncurses5 libraries
+# Install missing libraries
 wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb && \
-    sudo dpkg -i libtinfo5_6.3-2_amd64.deb &>/dev/null && \
-    rm -f libtinfo5_6.3-2_amd64.deb
+    sudo dpkg -i libtinfo5_6.3-2_amd64.deb && rm -f libtinfo5_6.3-2_amd64.deb
 
 wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
-    sudo dpkg -i libncurses5_6.3-2_amd64.deb &>/dev/null && \
-    rm -f libncurses5_6.3-2_amd64.deb
+    sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb
 
 # Init LineageOS-Revived 17.1
 repo init -u https://github.com/LineageOS-Revived/android.git \
@@ -16,7 +15,7 @@ repo init -u https://github.com/LineageOS-Revived/android.git \
     --git-lfs \
     -g default,-mips,-darwin,-notdefault
 
-# Clone your manifest
+# Clone manifest
 rm -rf .repo/local_manifests
 git clone -q https://github.com/raisaputra94-ai/rmx1805_manifest.git .repo/local_manifests
 
