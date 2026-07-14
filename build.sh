@@ -1,14 +1,7 @@
 #!/bin/bash
 set -e
 
-# Install missing libraries
-wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb && \
-    sudo dpkg -i libtinfo5_6.3-2_amd64.deb && rm -f libtinfo5_6.3-2_amd64.deb
-
-wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
-    sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb
-
-# Init LineageOS-Revived 18.1
+# Init
 repo init -u https://github.com/LineageOS/android.git \
     -b lineage-18.1 \
     --depth=1 \
@@ -17,7 +10,7 @@ repo init -u https://github.com/LineageOS/android.git \
 
 # Clone manifest
 rm -rf .repo/local_manifests
-git clone -q https://github.com/raisaputra94-ai/rmx1805_manifest.git .repo/local_manifests
+git clone -q https://github.com/raisaputra94-ai/local_manifests.git --depth 1 .repo/local_manifests
 
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
