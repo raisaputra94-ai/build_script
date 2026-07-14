@@ -8,9 +8,9 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-
 wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
     sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb
 
-# Init LineageOS-Revived 17.1
+# Init LineageOS-Revived 18.1
 repo init -u https://github.com/LineageOS-Revived/android.git \
-    -b lineage-17.1 \
+    -b lineage-18.1 \
     --depth=1 \
     --git-lfs \
     -g default,-mips,-darwin,-notdefault
@@ -27,7 +27,7 @@ source build/envsetup.sh
 lunch lineage_RMX1805-user
 
 export BUILD_HOSTNAME=android-build
-export BUILD_USERNAME=builder
+export BUILD_USERNAME=rai
 export TZ=Asia/Singapore
 
 mka bacon
