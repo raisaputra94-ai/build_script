@@ -9,7 +9,7 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
     sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb
 
 # Init LineageOS-Revived 18.1
-repo init -u https://github.com/LineageOS-Revived/android.git \
+repo init -u https://github.com/LineageOS/android.git \
     -b lineage-18.1 \
     --depth=1 \
     --git-lfs \
