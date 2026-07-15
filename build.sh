@@ -1,19 +1,17 @@
 #!/bin/bash
 set -e
 
-# Init
+# Init official LineageOS 18.1 (matches Project 85, so no issues)
 repo init -u https://github.com/LineageOS/android.git \
     -b lineage-18.1 \
-    --depth=1 \
-    --git-lfs \
-    -g default,-mips,-darwin,-notdefault
+    --depth=1
 
-# Clone manifest
+# Clone local manifest
 rm -rf .repo/local_manifests
 git clone -q https://github.com/raisaputra94-ai/local_manifests.git --depth 1 .repo/local_manifests
 
 # Sync
-for i in 1 2; do /opt/crave/resync.sh; done
+/opt/crave/resync.sh
 
 # Build
 source build/envsetup.sh
