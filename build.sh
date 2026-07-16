@@ -12,6 +12,7 @@ repo init --depth 1 -u https://github.com/LineageOS/android -b lineage-18.1 --gi
 echo "clone manifest = `date`"
 # Clone local manifest
 rm -rf .repo/local_manifests
+rm -f .repo/manifests/default.xml
 git clone -q https://github.com/raisaputra94-ai/local_manifests.git --depth 1 .repo/local_manifests
 
 echo "sync = `date`"
