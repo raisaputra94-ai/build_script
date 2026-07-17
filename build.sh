@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-rm -rf .repo
+
 export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=rai
 export TZ=Asia/Singapore
