@@ -30,5 +30,5 @@ XMLEOF
 
 # Build
 source build/envsetup.sh
-lunch lineage_RMX1805-user
+lunch lineage_RMX1805-userdebug
 mka bacon
