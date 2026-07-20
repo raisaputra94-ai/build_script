@@ -21,7 +21,7 @@ repo init -u https://github.com/LineageOS/android.git \
     --depth=1 \
     --git-lfs
 
-# noophyy device + vendor trees
+# noophyy device + vendor (oss branches)
 cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -40,8 +40,14 @@ XMLEOF
 # Sync
 /opt/crave/resync.sh
 
+# Cherry-pick HIDL light from LinuxGuy312 into noophyy
 rm -rf device/realme/RMX1805/lights
-sed -i '/android.hardware.lights-service.RMX1805/d' device/realme/RMX1805/device.mk
+git clone --depth 1 -b 11 https://github.com/LinuxGuy312/device_oppo_RMX1805 /tmp/light-src
+cp -r /tmp/light-src/light device/realme/RMX1805/light
+rm -rf /tmp/light-src
+
+# Fix device.mk: AIDL → HIDL light service
+sed -i 's/android.hardware.lights-service.RMX1805/android.hardware.light@2.0-service.RMX1805/g' device/realme/RMX1805/device.mk
 
 # Build
 source build/envsetup.sh
