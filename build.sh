@@ -14,8 +14,8 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
 # Remove old device/vendor folders AND .repo caches
 rm -rf device/oppo/RMX1805
 rm -rf device/realme/RMX1805
-rm -rf vendor/oppo
-rm -rf vendor/realme
+rm -rf vendor/oppo/RMX1805
+rm -rf vendor/realme/RMX1805
 rm -rf vendor/bcr
 rm -rf .repo/projects/device/oppo/RMX1805.git
 rm -rf .repo/projects/device/realme/RMX1805.git
