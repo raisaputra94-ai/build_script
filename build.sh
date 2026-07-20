@@ -21,33 +21,30 @@ repo init -u https://github.com/LineageOS/android.git \
     --depth=1 \
     --git-lfs
 
-# noophyy device + vendor (oss branches)
+# LinuxGuy312 device + LinuxGuy312 vendor (both clean)
 cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
-  <remote name="noophyy" fetch="https://github.com/" />
-  <project name="noophyy/device_realme_RMX1805"
-           path="device/realme/RMX1805"
-           remote="noophyy"
-           revision="oss" />
-  <project name="noophyy/vendor_realme_rmx1805"
-           path="vendor/realme/RMX1805"
-           remote="noophyy"
-           revision="oss" />
+  <remote name="gh" fetch="https://github.com/" />
+  <project name="LinuxGuy312/device_oppo_RMX1805"
+           path="device/oppo/RMX1805"
+           remote="gh"
+           revision="11" />
+  <project name="LinuxGuy312/vendor_oppo_RMX1805"
+           path="vendor/oppo/RMX1805"
+           remote="gh"
+           revision="11" />
 </manifest>
 XMLEOF
 
 # Sync
 /opt/crave/resync.sh
 
-# Cherry-pick HIDL light from LinuxGuy312 into noophyy
-rm -rf device/realme/RMX1805/lights
-git clone --depth 1 -b 11 https://github.com/LinuxGuy312/device_oppo_RMX1805 /tmp/light-src
-cp -r /tmp/light-src/light device/realme/RMX1805/light
-rm -rf /tmp/light-src
-
-# Fix device.mk: AIDL → HIDL light service
-sed -i 's/android.hardware.lights-service.RMX1805/android.hardware.light@2.0-service.RMX1805/g' device/realme/RMX1805/device.mk
+# Remove fingerprint spoof from init
+sed -i '/ro.build.description/d' device/oppo/RMX1805/init/init_msm8953.cpp
+sed -i '/ro.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
+sed -i '/ro.vendor.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
+sed -i '/\/\/ fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 
 # Build
 source build/envsetup.sh
