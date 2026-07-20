@@ -11,17 +11,31 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-
 wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
     sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb || true
 
-# Remove old local manifests
+# Remove old device/vendor folders AND .repo caches
+rm -rf device/oppo/RMX1805
+rm -rf device/realme/RMX1805
+rm -rf vendor/oppo/RMX1805
+rm -rf vendor/realme/RMX1805
+rm -rf .repo/projects/device/oppo/RMX1805.git
+rm -rf .repo/projects/device/realme/RMX1805.git
+rm -rf .repo/projects/vendor/oppo/RMX1805.git
+rm -rf .repo/projects/vendor/realme/RMX1805.git
+rm -rf .repo/project-objects/device/oppo/RMX1805.git
+rm -rf .repo/project-objects/device/realme/RMX1805.git
+rm -rf .repo/project-objects/vendor/oppo/RMX1805.git
+rm -rf .repo/project-objects/vendor/realme/RMX1805.git
+rm -rf .repo/project-objects/LinuxGuy312/device_oppo_RMX1805.git
+rm -rf .repo/project-objects/LinuxGuy312/vendor_oppo_RMX1805.git
 rm -rf .repo/local_manifests
-mkdir -p .repo/local_manifests
 
 # Init LineageOS 18.1
+mkdir -p .repo/local_manifests
 repo init -u https://github.com/LineageOS/android.git \
     -b lineage-18.1 \
     --depth=1 \
     --git-lfs
 
-# LinuxGuy312 device + LinuxGuy312 vendor (both clean)
+# LinuxGuy312 device + vendor
 cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -45,6 +59,9 @@ sed -i '/ro.build.description/d' device/oppo/RMX1805/init/init_msm8953.cpp
 sed -i '/ro.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 sed -i '/ro.vendor.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 sed -i '/\/\/ fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
+
+# Add AudioFX
+# echo 'PRODUCT_PACKAGES += AudioFX' >> device/oppo/RMX1805/device.mk
 
 # Build
 source build/envsetup.sh
