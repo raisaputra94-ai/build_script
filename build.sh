@@ -14,18 +14,20 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
 # Remove old device/vendor folders AND .repo caches
 rm -rf device/oppo/RMX1805
 rm -rf device/realme/RMX1805
-rm -rf vendor/oppo/RMX1805
-rm -rf vendor/realme/RMX1805
+rm -rf vendor/oppo
+rm -rf vendor/realme
+rm -rf vendor/bcr
 rm -rf .repo/projects/device/oppo/RMX1805.git
 rm -rf .repo/projects/device/realme/RMX1805.git
-rm -rf .repo/projects/vendor/oppo/RMX1805.git
-rm -rf .repo/projects/vendor/realme/RMX1805.git
+rm -rf .repo/projects/vendor/oppo
+rm -rf .repo/projects/vendor/realme
+rm -rf .repo/projects/vendor/bcr
 rm -rf .repo/project-objects/device/oppo/RMX1805.git
 rm -rf .repo/project-objects/device/realme/RMX1805.git
-rm -rf .repo/project-objects/vendor/oppo/RMX1805.git
-rm -rf .repo/project-objects/vendor/realme/RMX1805.git
-rm -rf .repo/project-objects/LinuxGuy312/device_oppo_RMX1805.git
-rm -rf .repo/project-objects/LinuxGuy312/vendor_oppo_RMX1805.git
+rm -rf .repo/project-objects/vendor/oppo
+rm -rf .repo/project-objects/vendor/realme
+rm -rf .repo/project-objects/vendor/bcr
+rm -rf .repo/project-objects/LinuxGuy312
 rm -rf .repo/local_manifests
 
 # Init LineageOS 18.1
