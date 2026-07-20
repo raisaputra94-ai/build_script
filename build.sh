@@ -16,7 +16,7 @@ rm -rf .repo/local_manifests
 mkdir -p .repo/local_manifests
 
 # Init LineageOS-Revived 18.1
-repo init -u https://github.com/LineageOS-Revived/android.git \
+repo init -u https://github.com/LineageOS/android.git \
     -b lineage-18.1 \
     --depth=1 \
     --git-lfs
