@@ -15,7 +15,7 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
 rm -rf .repo/local_manifests
 mkdir -p .repo/local_manifests
 
-# Init LineageOS-Revived 18.1
+# Init LineageOS 18.1
 repo init -u https://github.com/LineageOS/android.git \
     -b lineage-18.1 \
     --depth=1 \
@@ -39,6 +39,9 @@ XMLEOF
 
 # Sync
 /opt/crave/resync.sh
+
+# Fix product name mismatch
+sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/realme/RMX1805/AndroidProducts.mk
 
 # Build
 source build/envsetup.sh
