@@ -42,6 +42,7 @@ XMLEOF
 
 # Fix product name mismatch
 sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/realme/RMX1805/AndroidProducts.mk
+rm -rf device/realme/RMX1805/qcom-caf/display/display-commonsys-intf/aidl
 
 # Build
 source build/envsetup.sh
