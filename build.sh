@@ -29,7 +29,7 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
   <project name="noophyy/device_realme_RMX1805"
            path="device/realme/RMX1805"
            remote="noophyy"
-           revision="main" />
+           revision="oss" />
   <project name="noophyy/vendor_realme_rmx1805"
            path="vendor/realme/RMX1805"
            remote="noophyy"
@@ -39,10 +39,6 @@ XMLEOF
 
 # Sync
 /opt/crave/resync.sh
-
-# Fix product name mismatch
-sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/realme/RMX1805/AndroidProducts.mk
-rm -rf device/realme/RMX1805/qcom-caf/display/display-commonsys-intf/aidl
 
 # Build
 source build/envsetup.sh
