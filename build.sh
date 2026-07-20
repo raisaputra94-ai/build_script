@@ -40,6 +40,9 @@ XMLEOF
 # Sync
 /opt/crave/resync.sh
 
+rm -rf device/realme/RMX1805/lights
+sed -i '/android.hardware.lights-service.RMX1805/d' device/realme/RMX1805/device.mk
+
 # Build
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
