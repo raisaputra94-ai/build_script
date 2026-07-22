@@ -35,38 +35,26 @@ XMLEOF
 # Sync
 /opt/crave/resync.sh
 
-# ============================================
-# FIX 1: Remove fstab encryption (boots without Magisk)
-# ============================================
+# FIX 1: Remove fstab encryption
 sed -i 's/,encryptable=footer//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom
 
-# ============================================
-# FIX 2: Remove fingerprint spoof from init
-# ============================================
+# FIX 2: Remove fingerprint spoof
 sed -i '/ro.build.description/d' device/oppo/RMX1805/init/init_msm8953.cpp
 sed -i '/ro.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 sed -i '/ro.vendor.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 sed -i '/\/\/ fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 
-# ============================================
-# FIX 3: Fix AVB flags in BoardConfig.mk
-# ============================================
+# FIX 3: Fix AVB flags
 sed -i 's/--set_hashtree_disabled_flag/--flags 3/g' device/oppo/RMX1805/BoardConfig.mk
 sed -i 's/--flag 2//g' device/oppo/RMX1805/BoardConfig.mk
 
-# ============================================
-# FIX 4: Add verified boot state spoofing to kernel cmdline
-# ============================================
+# FIX 4: Spoof verified boot state
 sed -i '/loop.max_part=7/a BOARD_KERNEL_CMDLINE += androidboot.verifiedbootstate=green\nBOARD_KERNEL_CMDLINE += androidboot.vbmeta.device_state=locked\nBOARD_KERNEL_CMDLINE += androidboot.veritymode=enforcing' device/oppo/RMX1805/BoardConfig.mk
 
-# ============================================
-# FIX 5: Remove hardware disk encryption flag
-# ============================================
+# FIX 5: Remove HW disk encryption
 sed -i '/TARGET_HW_DISK_ENCRYPTION/d' device/oppo/RMX1805/BoardConfig.mk
 
-# ============================================
 # Build
-# ============================================
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka bacon
