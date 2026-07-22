@@ -41,10 +41,20 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 </manifest>
 XMLEOF
 
-# Sync everything via resync (no conflicts)
+# Sync
 /opt/crave/resync.sh
 
-# Now envsetup won't trigger broken vendorsetup.sh
+# FIX: Remove AIDL lights (incompatible with LOS 18.1)
+rm -rf device/realme/RMX1805/lights
+sed -i '/android.hardware.lights-service.RMX1805/d' device/realme/RMX1805/device.mk
+
+# Fix AVB flags
+sed -i 's/--flag 2/--flags 3/g' device/realme/RMX1805/BoardConfig.mk
+
+# Add verified boot state spoofing
+sed -i '/loop.max_part=7/a BOARD_KERNEL_CMDLINE += androidboot.verifiedbootstate=green\nBOARD_KERNEL_CMDLINE += androidboot.vbmeta.device_state=locked\nBOARD_KERNEL_CMDLINE += androidboot.veritymode=enforcing' device/realme/RMX1805/BoardConfig.mk
+
+# Build
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka bacon
