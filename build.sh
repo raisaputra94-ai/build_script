@@ -49,10 +49,10 @@ rm -rf device/realme/RMX1805/lights
 sed -i '/android.hardware.lights-service.RMX1805/d' device/realme/RMX1805/device.mk
 
 # Fix AVB flags
-sed -i 's/--flag 2/--flags 3/g' device/realme/RMX1805/BoardConfig.mk
+# sed -i 's/--flag 2/--flags 3/g' device/realme/RMX1805/BoardConfig.mk
 
 # Add verified boot state spoofing
-sed -i '/loop.max_part=7/a BOARD_KERNEL_CMDLINE += androidboot.verifiedbootstate=green\nBOARD_KERNEL_CMDLINE += androidboot.vbmeta.device_state=locked\nBOARD_KERNEL_CMDLINE += androidboot.veritymode=enforcing' device/realme/RMX1805/BoardConfig.mk
+# sed -i '/loop.max_part=7/a BOARD_KERNEL_CMDLINE += androidboot.verifiedbootstate=green\nBOARD_KERNEL_CMDLINE += androidboot.vbmeta.device_state=locked\nBOARD_KERNEL_CMDLINE += androidboot.veritymode=enforcing' device/realme/RMX1805/BoardConfig.mk
 
 # Build
 source build/envsetup.sh
