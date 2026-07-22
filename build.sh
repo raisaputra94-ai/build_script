@@ -11,50 +11,62 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-
 wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
     sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb || true
 
-# Nuclear cleanup - remove EVERYTHING that could conflict
-rm -rf device/realme/RMX1805
-rm -rf vendor/realme/RMX1805
-rm -rf kernel/realme/RMX1805
-rm -rf device/oppo/RMX1805
-rm -rf vendor/oppo/RMX1805
-rm -rf kernel/oppo/RMX1805
+# Clean up
+rm -rf device/oppo/RMX1805 vendor/oppo/RMX1805
 rm -rf .repo/local_manifests
 
-# Set up local manifest with ALL repos
+# Set up local manifest
 mkdir -p .repo/local_manifests
 cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="noophyy/device_realme_RMX1805"
-           path="device/realme/RMX1805"
+  <project name="RMX1805/device_oppo_RMX1805"
+           path="device/oppo/RMX1805"
            remote="gh"
-           revision="oss" />
-  <project name="noophyy/vendor_realme_rmx1805"
-           path="vendor/realme/RMX1805"
+           revision="lineage-18.1" />
+  <project name="RMX1805/vendor_oppo"
+           path="vendor/oppo"
            remote="gh"
-           revision="oss" />
-  <project name="noophyy/kernel_realme_msm8953"
-           path="kernel/realme/RMX1805"
-           remote="gh"
-           revision="Light" />
+           revision="lineage-18.1" />
 </manifest>
 XMLEOF
 
 # Sync
 /opt/crave/resync.sh
 
-# FIX: Remove AIDL lights (incompatible with LOS 18.1)
-rm -rf device/realme/RMX1805/lights
-sed -i '/android.hardware.lights-service.RMX1805/d' device/realme/RMX1805/device.mk
+# ============================================
+# FIX 1: Remove fstab encryption (boots without Magisk)
+# ============================================
+sed -i 's/,encryptable=footer//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom
 
-# Fix AVB flags
-# sed -i 's/--flag 2/--flags 3/g' device/realme/RMX1805/BoardConfig.mk
+# ============================================
+# FIX 2: Remove fingerprint spoof from init
+# ============================================
+sed -i '/ro.build.description/d' device/oppo/RMX1805/init/init_msm8953.cpp
+sed -i '/ro.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
+sed -i '/ro.vendor.build.fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
+sed -i '/\/\/ fingerprint/d' device/oppo/RMX1805/init/init_msm8953.cpp
 
-# Add verified boot state spoofing
-# sed -i '/loop.max_part=7/a BOARD_KERNEL_CMDLINE += androidboot.verifiedbootstate=green\nBOARD_KERNEL_CMDLINE += androidboot.vbmeta.device_state=locked\nBOARD_KERNEL_CMDLINE += androidboot.veritymode=enforcing' device/realme/RMX1805/BoardConfig.mk
+# ============================================
+# FIX 3: Fix AVB flags in BoardConfig.mk
+# ============================================
+sed -i 's/--set_hashtree_disabled_flag/--flags 3/g' device/oppo/RMX1805/BoardConfig.mk
+sed -i 's/--flag 2//g' device/oppo/RMX1805/BoardConfig.mk
 
+# ============================================
+# FIX 4: Add verified boot state spoofing to kernel cmdline
+# ============================================
+sed -i '/loop.max_part=7/a BOARD_KERNEL_CMDLINE += androidboot.verifiedbootstate=green\nBOARD_KERNEL_CMDLINE += androidboot.vbmeta.device_state=locked\nBOARD_KERNEL_CMDLINE += androidboot.veritymode=enforcing' device/oppo/RMX1805/BoardConfig.mk
+
+# ============================================
+# FIX 5: Remove hardware disk encryption flag
+# ============================================
+sed -i '/TARGET_HW_DISK_ENCRYPTION/d' device/oppo/RMX1805/BoardConfig.mk
+
+# ============================================
 # Build
+# ============================================
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka bacon
