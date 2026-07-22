@@ -12,7 +12,7 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
     sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb || true
 
 # Clean up
-rm -rf device/oppo/RMX1805 vendor/oppo/RMX1805
+rm -rf device/oppo/RMX1805 vendor/oppo/RMX1805 kernel/oppo/RMX1805 device/realme/RMX1805 vendor/realme/RMX1805 kernel/realme/RMX1805
 rm -rf .repo/local_manifests
 
 # Set up local manifest
