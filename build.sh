@@ -33,7 +33,7 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 XMLEOF
 
 # Sync
-/opt/crave/resync.sh
+for i in 1 2; do /opt/crave/resync.sh; done
 
 # FIX 1: Remove fstab encryption
 sed -i 's/,encryptable=footer//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom
