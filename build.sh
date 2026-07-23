@@ -11,6 +11,8 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-
 wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
     sudo dpkg -i libncurses5_6.3-2_amd64.deb && rm -f libncurses5_6.3-2_amd64.deb || true
 
+repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1 --git-lfs
+
 # Clean up
 rm -rf device/oppo vendor/oppo kernel/oppo device/realme vendor/realme kernel/realme
 rm -rf .repo/local_manifests
