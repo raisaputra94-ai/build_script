@@ -23,10 +23,10 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="RMX1805/device_oppo_RMX1805"
+  <project name="Adi-sdm/device_oppo_RMX1805"
            path="device/oppo/RMX1805"
            remote="gh"
-           revision="lineage-18.1" />
+           revision="AOSP" />
   <project name="RMX1805/vendor_oppo"
            path="vendor/oppo"
            remote="gh"
@@ -36,6 +36,8 @@ XMLEOF
 
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
+
+rm device/oppo/RMX1805/vendorsetup.sh
 
 # Build
 source build/envsetup.sh
