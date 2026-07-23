@@ -38,6 +38,12 @@ XMLEOF
 for i in 1 2; do /opt/crave/resync.sh; done
 
 rm device/oppo/RMX1805/vendorsetup.sh
+mv device/oppo/RMX1805/aosp_RMX1805.mk device/oppo/RMX1805/lineage_RMX1805.mk
+sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/oppo/RMX1805/AndroidProducts.mk
+sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/oppo/RMX1805/lineage_RMX1805.mk
+sed -i 's|vendor/aosp/config/common_full_phone.mk|vendor/lineage/config/common_full_phone.mk|g' device/oppo/RMX1805/lineage_RMX1805.mk
+sed -i '/ARCANE_/d' device/oppo/RMX1805/lineage_RMX1805.mk
+sed -i '/ArcaneOS/d' device/oppo/RMX1805/lineage_RMX1805.mk
 
 # Build
 source build/envsetup.sh
