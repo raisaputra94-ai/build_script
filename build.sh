@@ -17,7 +17,6 @@ repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1 
 rm -rf device/oppo vendor/oppo kernel/oppo device/realme vendor/realme kernel/realme
 rm -rf .repo/local_manifests
 
-# Set up local manifest
 mkdir -p .repo/local_manifests
 cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -37,15 +36,15 @@ XMLEOF
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
 
-rm device/oppo/RMX1805/vendorsetup.sh
+rm -f device/oppo/RMX1805/vendorsetup.sh
 mv device/oppo/RMX1805/aosp_RMX1805.mk device/oppo/RMX1805/lineage_RMX1805.mk
 sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/oppo/RMX1805/AndroidProducts.mk
 sed -i 's/aosp_RMX1805/lineage_RMX1805/g' device/oppo/RMX1805/lineage_RMX1805.mk
 sed -i 's|vendor/aosp/config/common_full_phone.mk|vendor/lineage/config/common_full_phone.mk|g' device/oppo/RMX1805/lineage_RMX1805.mk
 sed -i '/ARCANE_/d' device/oppo/RMX1805/lineage_RMX1805.mk
 sed -i '/ArcaneOS/d' device/oppo/RMX1805/lineage_RMX1805.mk
+sed -i '1i PRODUCT_SOONG_NAMESPACES += device/oppo/RMX1805' device/oppo/RMX1805/device.mk
 
-# Build
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka bacon
