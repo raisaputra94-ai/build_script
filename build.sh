@@ -26,15 +26,17 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
            path="device/oppo/RMX1805"
            remote="gh"
            revision="lineage-18.1" />
-  <project name="ninja-ninja-arch/vendor_oppo_RMX1805"
-           path="vendor/oppo/RMX1805"
+  <project name="RMX1805/vendor_oppo"
+           path="vendor/oppo"
            remote="gh"
-           revision="11" />
+           revision="lineage-18.1" />
 </manifest>
 XMLEOF
 
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
+
+echo "BOARD_AVB_BOOT_ADD_HASH_FOOTER_ARGS += --flags 3" >> device/oppo/RMX1805/BoardConfig.mk
 
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
