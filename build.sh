@@ -22,10 +22,10 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="RMX1805/device_oppo_RMX1805"
+  <project name="Enprytna/device_oppo_RMX1805"
            path="device/oppo/RMX1805"
            remote="gh"
-           revision="lineage-18.1" />
+           revision="11" />
   <project name="RMX1805/vendor_oppo"
            path="vendor/oppo"
            remote="gh"
@@ -35,8 +35,6 @@ XMLEOF
 
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
-
-echo "BOARD_AVB_BOOT_ADD_HASH_FOOTER_ARGS += --flags 3" >> device/oppo/RMX1805/BoardConfig.mk
 
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
