@@ -22,8 +22,9 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="RMX1805/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="lineage-18.1" />
+  <project name="raisaputra94-ai/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="11" />
   <project name="RMX1805/vendor_oppo" path="vendor/oppo" remote="gh" revision="lineage-18.1" />
+  <project name="LinuxGuy312/android_kernel_realme_RMX1805" path="kernel/oppo/RMX1805" remote="gh" revision="ArcticFox" />
 </manifest>
 XMLEOF
 
@@ -47,10 +48,6 @@ for i in 1 2; do /opt/crave/resync.sh; done
 # apply_patch "system/core" "core.patch"
 # apply_patch "external/selinux" "selinux.patch"
 # apply_patch "system/sepolicy" "sepolicy.patch"
-
-sed -i 's/--flag 2/--flags 2/g' device/oppo/RMX1805/BoardConfig.mk
-sed -i 's/PLATFORM_SECURITY_PATCH := [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/PLATFORM_SECURITY_PATCH := 2022-01-01/g' build/make/core/version_defaults.mk || true
-sed -i 's/,avb//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom || true
 
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
