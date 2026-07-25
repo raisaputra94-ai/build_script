@@ -48,10 +48,8 @@ apply_patch "system/core" "core.patch"
 apply_patch "external/selinux" "selinux.patch"
 apply_patch "system/sepolicy" "sepolicy.patch"
 
-# Fix the AVB typo (--flag to --flags) in official trees
 sed -i 's/--flag 2/--flags 2/g' device/oppo/RMX1805/BoardConfig.mk
-
-# Clean fstab from AVB checks (Essential for non-Magisk boot)
+sed -i 's/PLATFORM_SECURITY_PATCH := [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/PLATFORM_SECURITY_PATCH := 2022-01-01/g' build/make/core/version_defaults.mk || true
 sed -i 's/,avb//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom || true
 
 source build/envsetup.sh
