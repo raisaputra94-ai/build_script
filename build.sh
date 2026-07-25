@@ -67,5 +67,5 @@ sed -i 's/,avb//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom || true
 # ========================================================
 
 source build/envsetup.sh
-lunch lineage_RMX1805-userdebug
+lunch lineage_RMX1805-user
 mka bacon
