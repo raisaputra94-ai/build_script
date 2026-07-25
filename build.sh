@@ -2,7 +2,7 @@
 set -e
 
 export BUILD_HOSTNAME=android-build
-export BUILD_USERNAME=rai
+export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
 # Install libs
