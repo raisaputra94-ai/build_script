@@ -53,5 +53,5 @@ sed -i 's/PLATFORM_SECURITY_PATCH := [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/PLATFORM_S
 sed -i 's/,avb//g' device/oppo/RMX1805/rootdir/etc/fstab.qcom || true
 
 source build/envsetup.sh
-lunch lineage_RMX1805-user
+lunch lineage_RMX1805-userdebug
 mka bacon
