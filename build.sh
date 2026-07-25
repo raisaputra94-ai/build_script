@@ -30,23 +30,23 @@ XMLEOF
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
 
-PATCH_URL="https://raw.githubusercontent.com/bimuafaq/local_manifests/main/lineageos-18.1/patches"
+# PATCH_URL="https://raw.githubusercontent.com/bimuafaq/local_manifests/main/lineageos-18.1/patches"
 
-apply_patch() {
-    local dir=$1
-    local patch=$2
-    echo "Applying $patch to $dir..."
-    curl -sL "$PATCH_URL/$patch" -o "$patch"
-    pushd "$dir" > /dev/null
-    git am --3way < "../../$patch" || (git am --abort && echo "Failed to apply $patch")
-    popd > /dev/null
-    rm "$patch"
-}
+# apply_patch() {
+#     local dir=$1
+#     local patch=$2
+#     echo "Applying $patch to $dir..."
+#     curl -sL "$PATCH_URL/$patch" -o "$patch"
+#     pushd "$dir" > /dev/null
+#     git am --3way < "../../$patch" || (git am --abort && echo "Failed to apply $patch")
+#     popd > /dev/null
+#     rm "$patch"
+# }
 
-apply_patch "build/make" "build.patch"
-apply_patch "system/core" "core.patch"
-apply_patch "external/selinux" "selinux.patch"
-apply_patch "system/sepolicy" "sepolicy.patch"
+# apply_patch "build/make" "build.patch"
+# apply_patch "system/core" "core.patch"
+# apply_patch "external/selinux" "selinux.patch"
+# apply_patch "system/sepolicy" "sepolicy.patch"
 
 sed -i 's/--flag 2/--flags 2/g' device/oppo/RMX1805/BoardConfig.mk
 sed -i 's/PLATFORM_SECURITY_PATCH := [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/PLATFORM_SECURITY_PATCH := 2022-01-01/g' build/make/core/version_defaults.mk || true
