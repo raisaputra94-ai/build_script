@@ -22,9 +22,8 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="raisaputra94-ai/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="11" />
+  <project name="raisaputra94-ai/device_oppo_RMX1805-2" path="device/oppo/RMX1805" remote="gh" revision="11" />
   <project name="RMX1805/vendor_oppo" path="vendor/oppo" remote="gh" revision="lineage-18.1" />
-  <project name="LinuxGuy312/android_kernel_realme_RMX1805" path="kernel/oppo/RMX1805" remote="gh" revision="ArcticFox" />
 </manifest>
 XMLEOF
 
