@@ -50,6 +50,23 @@ for i in 1 2; do /opt/crave/resync.sh; done
 # apply_patch "external/selinux" "selinux.patch"
 # apply_patch "system/sepolicy" "sepolicy.patch"
 
+DEVICE_MK=device/realme/RMX1805/device.mk
+
+sed -i 's/\\[[:space:]]\+$/\\/' "$DEVICE_MK"
+
+# Verify the fix actually applied; abort early rather than fail 40 min into a build.
+if grep -qP '\\\s+$' "$DEVICE_MK"; then
+    echo "ERROR: trailing whitespace after backslash still present in $DEVICE_MK:"
+    grep -nP '\\\s+$' "$DEVICE_MK"
+    exit 1
+fi
+echo "OK: device.mk line-continuation typo patched."
+
+# Sanity-check every makefile in the device tree for the same class of bug.
+if grep -rnP '\\\s+$' device/realme/RMX1805/ --include='*.mk' ; then
+    echo "WARNING: other makefiles have trailing whitespace after a backslash (above)."
+fi
+
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka installclean
