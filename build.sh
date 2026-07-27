@@ -51,4 +51,5 @@ for i in 1 2; do /opt/crave/resync.sh; done
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka installclean
+rm -rf out/target/product/RMX1805
 mka bacon
