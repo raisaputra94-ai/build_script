@@ -22,7 +22,7 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="AsTechpro20/android_device_realme_RMX1805" path="device/realme/RMX1805" remote="gh" revision="oss" />
+  <project name="ninja-ninja-arch/android_device_realme_RMX1805" path="device/realme" remote="gh" revision="main" />
   <project name="ninja-ninja-arch/android_vendor_realme_RMX1805" path="vendor/realme/RMX1805" remote="gh" revision="test11" />
   <project name="ninja-ninja-arch/kernel_realme_RMX1805_oss" path="kernel/realme/RMX1805" remote="gh" revision="12" />
 </manifest>
@@ -31,7 +31,7 @@ XMLEOF
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
 
-rm device/realme/RMX1805/vendorsetup.sh
+# rm device/realme/RMX1805/vendorsetup.sh
 # PATCH_URL="https://raw.githubusercontent.com/bimuafaq/local_manifests/main/lineageos-18.1/patches"
 
 # apply_patch() {
