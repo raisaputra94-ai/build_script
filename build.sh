@@ -24,7 +24,7 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
   <remote name="gh" fetch="https://github.com/" />
   <project name="ninja-ninja-arch/android_device_realme_RMX1805" path="device/realme" remote="gh" revision="main" />
   <project name="ninja-ninja-arch/android_vendor_realme_RMX1805" path="vendor/realme/RMX1805" remote="gh" revision="test11" />
-  <project name="ninja-ninja-arch/kernel_realme_RMX1805_oss" path="kernel/realme/RMX1805" remote="gh" revision="12" />
+  <project name="LinuxGuy312/android_kernel_realme_RMX1805" path="kernel/realme/RMX1805" remote="gh" revision="ArcticFox" />
 </manifest>
 XMLEOF
 
