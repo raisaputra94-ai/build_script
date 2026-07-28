@@ -78,13 +78,6 @@ if [ ! -e "$KDIR/drivers/kernelsu/Kconfig" ]; then
     echo "[+] KernelSU installed: $KDIR/drivers/kernelsu -> ../KernelSU/kernel"
 fi
 
-DEFCONFIG="$KDIR/arch/arm64/configs/$(sed -n 's/^TARGET_KERNEL_CONFIG[[:space:]]*:*=[[:space:]]*//p' \
-            device/realme/RMX1805/BoardConfig.mk | tr -d '[:space:]')"
-if [ -f "$DEFCONFIG" ] && ! grep -q "CONFIG_KSU" "$DEFCONFIG"; then
-    echo "# CONFIG_KSU is not set" >> "$DEFCONFIG"
-    echo "[+] Pinned 'CONFIG_KSU is not set' in $(basename "$DEFCONFIG") -- boot.img stays root-free."
-fi
-
 ( cd "$KDIR" && \
   grep -rhoP '^\s*source\s+"\K[^"]+' --include='Kconfig*' . 2>/dev/null | sort -u | \
   while read -r p; do
