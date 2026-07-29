@@ -23,7 +23,7 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
   <project name="i-jaideep/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="eleven" />
-  <project name="i-jaideep/vendor_oppo_RMX1805" path="vendor/oppo/RMX1805" remote="gh" revision="s" />
+  <project name="i-jaideep/vendor_oppo_RMX1805" path="vendor/oppo" remote="gh" revision="eleven" />
 </manifest>
 XMLEOF
 
