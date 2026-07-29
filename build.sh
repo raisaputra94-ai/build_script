@@ -50,7 +50,7 @@ for i in 1 2; do /opt/crave/resync.sh; done
 # apply_patch "external/selinux" "selinux.patch"
 # apply_patch "system/sepolicy" "sepolicy.patch"
 
-DEVICE_MK=device/realme/RMX1805/device.mk
+DEVICE_MK=device/oppo/RMX1805/device.mk
 
 sed -i 's/\\[[:space:]]\+$/\\/' "$DEVICE_MK"
 
@@ -63,11 +63,11 @@ fi
 echo "OK: device.mk line-continuation typo patched."
 
 # Sanity-check every makefile in the device tree for the same class of bug.
-if grep -rnP '\\\s+$' device/realme/RMX1805/ --include='*.mk' ; then
+if grep -rnP '\\\s+$' device/oppo/RMX1805/ --include='*.mk' ; then
     echo "WARNING: other makefiles have trailing whitespace after a backslash (above)."
 fi
 
-KDIR=kernel/realme/RMX1805
+KDIR=kernel/oppo/RMX1805
 
 if [ ! -e "$KDIR/drivers/kernelsu/Kconfig" ]; then
     echo "[+] Installing KernelSU v0.9.5 (last non-GKI release)..."
