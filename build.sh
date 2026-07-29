@@ -23,7 +23,7 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
   <project name="ninja-ninja-arch/android_device_realme_RMX1805" path="device/realme" remote="gh" revision="main" />
-  <project name="ninja-ninja-arch/android_vendor_realme_RMX1805" path="vendor/realme/RMX1805" remote="gh" revision="test11" />
+  <project name="inja-ninja-arch/vendor_oppo_RMX1805" path="vendor/realme/RMX1805" remote="gh" revision="11" />
   <project name="LinuxGuy312/android_kernel_realme_RMX1805" path="kernel/realme/RMX1805" remote="gh" revision="ArcticFox" />
 </manifest>
 XMLEOF
@@ -85,9 +85,8 @@ fi
   done )
 
 rm -rf out/target/product/RMX1805/obj/KERNEL_OBJ
-
+rm -rf out/target/product/RMX1805
 source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka installclean
-rm -rf out/target/product/RMX1805
 mka bacon
