@@ -22,67 +22,13 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="gh" fetch="https://github.com/" />
-  <project name="raisaputra94-ai/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="11" />
-  <project name="LinuxGuy312/vendor_oppo_RMX1805" path="vendor/oppo/RMX1805" remote="gh" revision="11" />
-  <project name="LinuxGuy312/android_kernel_realme_RMX1805" path="kernel/oppo/RMX1805" remote="gh" revision="ArcticFox" />
+  <project name="i-jaideep/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="eleven" />
+  <project name="i-jaideep/vendor_oppo_RMX1805" path="vendor/oppo/RMX1805" remote="gh" revision="s" />
 </manifest>
 XMLEOF
 
 # Sync
 for i in 1 2; do /opt/crave/resync.sh; done
-
-# rm device/realme/RMX1805/vendorsetup.sh
-# PATCH_URL="https://raw.githubusercontent.com/bimuafaq/local_manifests/main/lineageos-18.1/patches"
-
-# apply_patch() {
-#     local dir=$1
-#     local patch=$2
-#     echo "Applying $patch to $dir..."
-#     curl -sL "$PATCH_URL/$patch" -o "$patch"
-#     pushd "$dir" > /dev/null
-#     git am --3way < "../../$patch" || (git am --abort && echo "Failed to apply $patch")
-#     popd > /dev/null
-#     rm "$patch"
-# }
-
-# apply_patch "build/make" "build.patch"
-# apply_patch "system/core" "core.patch"
-# apply_patch "external/selinux" "selinux.patch"
-# apply_patch "system/sepolicy" "sepolicy.patch"
-
-DEVICE_MK=device/oppo/RMX1805/device.mk
-
-sed -i 's/\\[[:space:]]\+$/\\/' "$DEVICE_MK"
-
-# Verify the fix actually applied; abort early rather than fail 40 min into a build.
-if grep -qP '\\\s+$' "$DEVICE_MK"; then
-    echo "ERROR: trailing whitespace after backslash still present in $DEVICE_MK:"
-    grep -nP '\\\s+$' "$DEVICE_MK"
-    exit 1
-fi
-echo "OK: device.mk line-continuation typo patched."
-
-# Sanity-check every makefile in the device tree for the same class of bug.
-if grep -rnP '\\\s+$' device/oppo/RMX1805/ --include='*.mk' ; then
-    echo "WARNING: other makefiles have trailing whitespace after a backslash (above)."
-fi
-
-KDIR=kernel/oppo/RMX1805
-
-if [ ! -e "$KDIR/drivers/kernelsu/Kconfig" ]; then
-    echo "[+] Installing KernelSU v0.9.5 (last non-GKI release)..."
-    ( cd "$KDIR" && \
-      curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5 )
-
-    test -e "$KDIR/drivers/kernelsu/Kconfig" || { echo "ERROR: KernelSU install failed"; exit 1; }
-    echo "[+] KernelSU installed: $KDIR/drivers/kernelsu -> ../KernelSU/kernel"
-fi
-
-( cd "$KDIR" && \
-  grep -rhoP '^\s*source\s+"\K[^"]+' --include='Kconfig*' . 2>/dev/null | sort -u | \
-  while read -r p; do
-      [ -e "$p" ] || echo "DANGLING Kconfig source: $p"
-  done )
 
 rm -rf out/target/product/RMX1805/obj/KERNEL_OBJ
 rm -rf out/target/product/RMX1805
