@@ -36,6 +36,27 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
 # ---------------------------------------------------------------------------
 # Manifest
 # ---------------------------------------------------------------------------
+# This crave workspace is persistent and was previously initialised against the
+# LineageOS manifest ("repo: reusing existing repo client checkout").
+#
+# Lineage splits the WebView prebuilts into four projects:
+#     external/chromium-webview/prebuilt/{arm,arm64,x86,x86_64}  (+ /patches)
+# ArrowOS has exactly one:
+#     external/chromium-webview
+#
+# So on the manifest switch repo tries to DELETE the four obsolete project
+# dirs, and refuses because prebuilt APK dirs always look dirty to it:
+#     "Cannot remove project: uncommitted changes are present"
+# That is the fatal error -- the sync aborts before the build ever starts.
+# Deleting the tree ourselves lets repo lay down Arrow's version cleanly.
+rm -rf external/chromium-webview
+rm -rf .repo/projects/external/chromium-webview
+rm -rf .repo/project-objects/LineageOS
+
+# Same class of problem for the device/vendor paths we replace below.
+rm -rf .repo/projects/device/oppo .repo/projects/vendor/oppo
+rm -rf .repo/projects/device/realme .repo/projects/vendor/realme
+
 repo init -u https://github.com/ArrowOS/android_manifest.git -b arrow-11.0 --depth=1 --git-lfs
 
 # Clean up leftovers from any previous (LineageOS) run
