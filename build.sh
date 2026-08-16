@@ -43,24 +43,20 @@ done
 
 BOARD_CONFIG="device/oppo/RMX1805/BoardConfig.mk"
 
-# Match the known-working boot image: retain BOARD_AVB_ENABLE=true so
-# boot.img gets an AVB hash footer, but do not set disabled-verification
-# flags on generated vbmeta metadata.
-sed -i \
-  -e '/BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS.*--set_hashtree_disabled_flag/d' \
-  -e '/BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS.*--flag[[:space:]]*2/d' \
-  "$BOARD_CONFIG"
+# Match the known-working 2021 userdebug ROM. That build predates the
+# September 2021 AVB commit and its boot.img has no AVB footer at all.
+# Remove the complete BOARD_AVB_* configuration, including BOARD_AVB_ENABLE.
+sed -i '/^[[:space:]]*BOARD_AVB_/d' "$BOARD_CONFIG"
 
-# Stop instead of silently building if the unwanted settings remain.
-if grep -Eq \
-  'BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS.*(--set_hashtree_disabled_flag|--flag[[:space:]]*2)' \
-  "$BOARD_CONFIG"; then
-  echo "ERROR: Failed to remove disabled-verification AVB arguments" >&2
+# Stop instead of silently building if any board AVB setting remains.
+if grep -Eq '^[[:space:]]*BOARD_AVB_' "$BOARD_CONFIG"; then
+  echo "ERROR: Failed to remove BOARD_AVB settings" >&2
+  grep -nE '^[[:space:]]*BOARD_AVB_' "$BOARD_CONFIG" >&2
   exit 1
 fi
 
-echo "Final AVB configuration:"
-grep -nE 'BOARD_AVB|VBMETA' "$BOARD_CONFIG" || true
+echo "AVB board settings removed successfully."
+
 
 # Completely clean this device's previous output.
 rm -rf out/target/product/RMX1805
