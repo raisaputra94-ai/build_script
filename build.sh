@@ -67,6 +67,7 @@ rm -rf out/target/product/RMX1805
 
 source build/envsetup.sh
 
-# The known-working reference ROM is a user build, not userdebug.
-lunch lineage_RMX1805-user
+# Use userdebug because this device tree's permissive/legacy SELinux policy
+# does not currently pass the stricter user-build policy checks.
+lunch lineage_RMX1805-userdebug
 mka bacon
