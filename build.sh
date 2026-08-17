@@ -41,6 +41,47 @@ for i in 1 2; do
   /opt/crave/resync.sh
 done
 
+# Fetch and apply the requested LineageOS 18.1 platform patches.
+PATCH_REPO_DIR="/tmp/bimuafaq-local_manifests"
+PATCH_DIR="$PATCH_REPO_DIR/lineageos-18.1/patches"
+
+rm -rf "$PATCH_REPO_DIR"
+git clone --depth=1 \
+  https://github.com/bimuafaq/local_manifests.git \
+  "$PATCH_REPO_DIR"
+
+apply_platform_patch() {
+  local project_dir="$1"
+  local patch_file="$2"
+  local patch_name
+  patch_name="$(basename "$patch_file")"
+
+  if [[ ! -d "$project_dir" ]]; then
+    echo "ERROR: Source project not found: $project_dir" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$patch_file" ]]; then
+    echo "ERROR: Patch file not found: $patch_file" >&2
+    exit 1
+  fi
+
+  if git -C "$project_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+    echo "Skipping $patch_name for $project_dir: already applied"
+  elif git -C "$project_dir" apply --check "$patch_file"; then
+    git -C "$project_dir" apply "$patch_file"
+    echo "Applied $patch_name to $project_dir"
+  else
+    echo "ERROR: $patch_name does not apply cleanly to $project_dir" >&2
+    exit 1
+  fi
+}
+
+apply_platform_patch "build/make"       "$PATCH_DIR/build.patch"
+apply_platform_patch "system/core"      "$PATCH_DIR/core.patch"
+apply_platform_patch "external/selinux" "$PATCH_DIR/selinux.patch"
+apply_platform_patch "system/sepolicy"  "$PATCH_DIR/sepolicy.patch"
+
 BOARD_CONFIG="device/oppo/RMX1805/BoardConfig.mk"
 
 # Match the known-working 2021 userdebug ROM. That build predates the
@@ -57,13 +98,34 @@ fi
 
 echo "AVB board settings removed successfully."
 
+# In userdebug builds Android init normally catches an early fatal signal and
+# deliberately reboots into the bootloader. Disable that behavior so the real
+# failure can remain visible and, where supported, be recorded in pstore.
+INIT_BP="system/core/init/Android.bp"
+INIT_MK="system/core/init/Android.mk"
 
-# Completely clean this device's previous output.
-rm -rf out/target/product/RMX1805
+sed -i \
+  's/-DREBOOT_BOOTLOADER_ON_PANIC=1/-DREBOOT_BOOTLOADER_ON_PANIC=0/g' \
+  "$INIT_BP" "$INIT_MK"
+
+# Stop rather than silently producing another bootloader-rebooting build.
+if grep -Hn -- '-DREBOOT_BOOTLOADER_ON_PANIC=1' "$INIT_BP" "$INIT_MK"; then
+  echo "ERROR: Failed to disable init panic-to-bootloader behavior" >&2
+  exit 1
+fi
+
+echo "Init panic-to-bootloader behavior disabled successfully."
+grep -Hn -- 'REBOOT_BOOTLOADER_ON_PANIC' "$INIT_BP" "$INIT_MK" || true
+
+# Completely clean this device's output and init's Soong intermediates so the
+# patched init binary cannot be reused from a previous build.
+rm -rf \
+  out/target/product/RMX1805 \
+  out/soong/.intermediates/system/core/init
 
 source build/envsetup.sh
 
-# Use userdebug because this device tree's permissive/legacy SELinux policy
-# does not currently pass the stricter user-build policy checks.
-lunch lineage_RMX1805-userdebug
+# The imported SELinux/sepolicy patches permit this legacy device policy to
+# build as user. Note that this weakens the normal user-build policy checks.
+lunch lineage_RMX1805-user
 mka bacon
