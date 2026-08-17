@@ -84,6 +84,21 @@ apply_platform_patch "system/sepolicy"  "$PATCH_DIR/sepolicy.patch"
 
 BOARD_CONFIG="device/oppo/RMX1805/BoardConfig.mk"
 
+# A real user build must not disable SELinux neverallow validation. Remove the
+# device-tree override instead of modifying AOSP's user-build safety guard.
+sed -i \
+  '/^[[:space:]]*SELINUX_IGNORE_NEVERALLOWS[[:space:]]*:=[[:space:]]*true[[:space:]]*$/d' \
+  "$BOARD_CONFIG"
+
+if grep -Eq \
+  '^[[:space:]]*SELINUX_IGNORE_NEVERALLOWS[[:space:]]*:=[[:space:]]*true' \
+  "$BOARD_CONFIG"; then
+  echo "ERROR: Failed to enable SELinux neverallow validation" >&2
+  exit 1
+fi
+
+echo "SELinux neverallow validation enabled for the user build."
+
 # Match the known-working 2021 userdebug ROM. That build predates the
 # September 2021 AVB commit and its boot.img has no AVB footer at all.
 # Remove the complete BOARD_AVB_* configuration, including BOARD_AVB_ENABLE.
@@ -98,9 +113,9 @@ fi
 
 echo "AVB board settings removed successfully."
 
-# In userdebug builds Android init normally catches an early fatal signal and
-# deliberately reboots into the bootloader. Disable that behavior so the real
-# failure can remain visible and, where supported, be recorded in pstore.
+# Ensure Android init does not deliberately turn an early fatal signal into a
+# fastboot reboot. User builds default to 0; this also guards against patches
+# or stale configuration re-enabling the behavior.
 INIT_BP="system/core/init/Android.bp"
 INIT_MK="system/core/init/Android.mk"
 
@@ -125,7 +140,7 @@ rm -rf \
 
 source build/envsetup.sh
 
-# The imported SELinux/sepolicy patches permit this legacy device policy to
-# build as user. Note that this weakens the normal user-build policy checks.
+# Build as user. Permissive-domain checks are relaxed by the imported patch,
+# while SELinux neverallow validation remains enabled.
 lunch lineage_RMX1805-user
 mka bacon
