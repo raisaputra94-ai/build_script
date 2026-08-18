@@ -99,6 +99,35 @@ fi
 
 echo "SELinux neverallow validation enabled for the user build."
 
+# Fix the device policy violations exposed when neverallow validation is on.
+# init must never execute an unlabeled file without a domain transition.
+DEVICE_INIT_TE="device/oppo/RMX1805/sepolicy/private/init.te"
+sed -i \
+  '/^[[:space:]]*allow[[:space:]]\+init[[:space:]]\+unlabeled:file[[:space:]]*{[[:space:]]*execute[[:space:]]\+execute_no_trans[[:space:]]*};[[:space:]]*$/d' \
+  "$DEVICE_INIT_TE"
+
+if grep -Eq 'allow[[:space:]]+init[[:space:]]+unlabeled:file.*execute' \
+  "$DEVICE_INIT_TE"; then
+  echo "ERROR: Failed to remove init execution of unlabeled files" >&2
+  exit 1
+fi
+
+# The fingerprint service executable is installed under /system/bin/hw and
+# labeled as a system_file_type. Its process domain must therefore be a core
+# domain rather than a vendor domain.
+FINGERPRINT_TE="device/oppo/RMX1805/sepolicy/private/hal_fingerprint_RMX1805.te"
+sed -i \
+  's/^type hal_fingerprint_RMX1805, domain;$/type hal_fingerprint_RMX1805, domain, coredomain;/' \
+  "$FINGERPRINT_TE"
+
+if ! grep -q '^type hal_fingerprint_RMX1805, domain, coredomain;$' \
+  "$FINGERPRINT_TE"; then
+  echo "ERROR: Failed to mark the system fingerprint HAL as coredomain" >&2
+  exit 1
+fi
+
+echo "RMX1805 SELinux neverallow violations patched."
+
 # Match the known-working 2021 userdebug ROM. That build predates the
 # September 2021 AVB commit and its boot.img has no AVB footer at all.
 # Remove the complete BOARD_AVB_* configuration, including BOARD_AVB_ENABLE.
