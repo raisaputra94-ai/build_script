@@ -14,17 +14,14 @@ wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.
   sudo dpkg -i libncurses5_6.3-2_amd64.deb && \
   rm -f libncurses5_6.3-2_amd64.deb || true
 
-repo init \
-  -u https://github.com/LineageOS-Revived/android.git \
-  -b lineage-18.1 \
-  --depth=1 \
-  --git-lfs
-
-# Remove old device-specific sources and manifests.
+# Clean stale state from any previous run BEFORE repo init. Crave reuses the
+# workspace, so .repo/local_manifests may still hold the old manifest with the
+# duplicate sepolicy path — repo init aborts on it before this script ever
+# gets to rewrite it. (This is what killed build 303966 in under a minute.)
 rm -rf \
   device/oppo vendor/oppo kernel/oppo \
   device/realme vendor/realme kernel/realme \
-  .repo/local_manifests
+  .repo/local_manifests .repo/local_manifest.xml
 
 mkdir -p .repo/local_manifests
 cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
@@ -39,6 +36,12 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
        Do NOT add it here: a duplicate path aborts the sync. -->
 </manifest>
 XMLEOF
+
+repo init \
+  -u https://github.com/LineageOS-Revived/android.git \
+  -b lineage-18.1 \
+  --depth=1 \
+  --git-lfs
 
 # Sync sources.
 for i in 1 2; do
