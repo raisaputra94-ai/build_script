@@ -34,7 +34,9 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
   <project name="ninja-ninja-arch/android_device_realme_RMX1805" path="device/realme" remote="gh" revision="main" />
   <project name="ninja-ninja-arch/android_vendor_realme_RMX1805" path="vendor/realme/RMX1805" remote="gh" revision="test11" />
   <project name="ninja-ninja-arch/kernel_realme_RMX1805_oss" path="kernel/realme/RMX1805" remote="gh" revision="12" />
-  <project name="LineageOS/android_device_qcom_sepolicy" path="device/qcom/sepolicy-legacy-um" remote="gh" revision="lineage-18.1-legacy-um" />
+  <!-- NOTE: device/qcom/sepolicy-legacy-um is already in the LineageOS-Revived
+       base manifest (snippets/lineage.xml) at revision lineage-18.1-legacy-um.
+       Do NOT add it here: a duplicate path aborts the sync. -->
 </manifest>
 XMLEOF
 
@@ -43,13 +45,26 @@ for i in 1 2; do
   /opt/crave/resync.sh
 done
 
+# Fail fast if anything didn't sync: a missing tree here means lunch will die
+# with a confusing roomservice error. Better to stop now with a clear message.
+for f in device/realme/RMX1805/lineage_RMX1805.mk \
+         vendor/realme/RMX1805/BoardConfigVendor.mk \
+         kernel/realme/RMX1805/Makefile \
+         device/qcom/sepolicy-legacy-um/SEPolicy.mk; do
+  if [[ ! -e "$f" ]]; then
+    echo "ERROR: expected source missing after sync: $f" >&2
+    exit 1
+  fi
+done
+echo "All device sources present."
+
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
 
 source build/envsetup.sh
 
-# Build as user.
-lunch lineage_RMX1805-user
+# Build as userdebug.
+lunch lineage_RMX1805-userdebug
 mka bacon
 
 # ---------------------------------------------------------------------------
