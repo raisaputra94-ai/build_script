@@ -55,6 +55,7 @@ repo init \
 # Fail fast if anything didn't sync: a missing tree here means lunch will die
 # with a confusing roomservice error. Better to stop now with a clear message.
 for f in device/realme/RMX1805/lineage_RMX1805.mk \
+         device/realme/RMX1805/AndroidProducts.mk \
          vendor/realme/RMX1805/BoardConfigVendor.mk \
          kernel/realme/RMX1805/Makefile \
          device/qcom/sepolicy-legacy-um/SEPolicy.mk \
@@ -81,6 +82,16 @@ echo "device.mk line-continuation fix applied."
 
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
+
+# Clear soong's source-finder cache. soong_ui caches the tree scan in
+# out/.module_paths/files.db and derives out/.module_paths/AndroidProducts.mk.list
+# from it; lunch reads that list to locate lineage_RMX1805.mk. Because this
+# script deletes and re-syncs the device/vendor/kernel trees on every run
+# (Crave reuses the workspace), a stale cache makes lunch fail with
+# 'Can not locate config makefile for product "lineage_RMX1805"' even though
+# the tree synced fine. This dir is fully regenerable -- soong_ui rebuilds it
+# on the next lunch. (This is what killed the 01:59 run after 304057 worked.)
+rm -rf out/.module_paths
 
 source build/envsetup.sh
 
