@@ -5,14 +5,18 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
-# Install compatibility libraries
-wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb && \
-  sudo dpkg -i libtinfo5_6.3-2_amd64.deb && \
-  rm -f libtinfo5_6.3-2_amd64.deb || true
+# Install compatibility libraries. Deliberately NO '|| true' here: under
+# 'set -e' a failed download aborts now with a clear error instead of dying
+# 3 hours into the build with a missing-library mystery. (dpkg -i over an
+# already-installed package is a harmless reinstall, so reused machines
+# are fine.)
+wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb
+sudo dpkg -i libtinfo5_6.3-2_amd64.deb
+rm -f libtinfo5_6.3-2_amd64.deb
 
-wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb && \
-  sudo dpkg -i libncurses5_6.3-2_amd64.deb && \
-  rm -f libncurses5_6.3-2_amd64.deb || true
+wget -q https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2_amd64.deb
+sudo dpkg -i libncurses5_6.3-2_amd64.deb
+rm -f libncurses5_6.3-2_amd64.deb
 
 # Clean stale state from any previous run BEFORE repo init. Crave reuses the
 # workspace, so .repo/local_manifests may still hold the old manifest with the
@@ -43,23 +47,37 @@ repo init \
   --depth=1 \
   --git-lfs
 
-# Sync sources.
-for i in 1 2; do
-  /opt/crave/resync.sh
-done
+# Sync sources. The '||' retry is deliberate: under 'set -e' a for-loop would
+# abort on the first failure without ever retrying, so a transient network
+# error during the multi-hour sync would waste the whole queue. Retry once.
+/opt/crave/resync.sh || /opt/crave/resync.sh
 
 # Fail fast if anything didn't sync: a missing tree here means lunch will die
 # with a confusing roomservice error. Better to stop now with a clear message.
 for f in device/realme/RMX1805/lineage_RMX1805.mk \
          vendor/realme/RMX1805/BoardConfigVendor.mk \
          kernel/realme/RMX1805/Makefile \
-         device/qcom/sepolicy-legacy-um/SEPolicy.mk; do
+         device/qcom/sepolicy-legacy-um/SEPolicy.mk \
+         vendor/lineage/config/common_full_phone.mk; do
   if [[ ! -e "$f" ]]; then
     echo "ERROR: expected source missing after sync: $f" >&2
     exit 1
   fi
 done
 echo "All device sources present."
+
+# Fix a make syntax bug in the ninja device tree: device.mk line 395 is
+# "PRODUCT_PACKAGES += \ " with a trailing space after the line-continuation
+# backslash. Make does not treat "\ " as a continuation, so lunch dies with
+# "device.mk:396: error: missing separator". This is what killed build 304057
+# at 2m38s. Strip trailing whitespace after backslashes (idempotent; a no-op
+# once fixed upstream), then fail fast if the broken line is still there.
+sed -i 's/\\ $/\\/' device/realme/RMX1805/device.mk
+if grep -qE '\\ $' device/realme/RMX1805/device.mk; then
+  echo "ERROR: broken line continuation still present in device/realme/RMX1805/device.mk" >&2
+  exit 1
+fi
+echo "device.mk line-continuation fix applied."
 
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
@@ -94,6 +112,9 @@ fi
 mka target-files-package
 
 TF_ZIP="$(ls -t out/target/product/RMX1805/obj/PACKAGING/target_files_intermediates/*-target_files-*.zip | head -n1)"
+# The ls|head pipe masks ls failures under 'set -e' (pipe status is head's),
+# so verify explicitly instead of signing an empty filename hours in.
+[[ -f "$TF_ZIP" ]] || { echo "ERROR: no target_files zip found after target-files-package" >&2; exit 1; }
 echo "Signing target files: $TF_ZIP"
 
 SIGNED_TF="out/target/product/RMX1805/signed-target_files.zip"
