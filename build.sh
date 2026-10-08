@@ -94,6 +94,21 @@ if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; the
 fi
 echo "kernel Kconfig kernelsu fix applied."
 
+# Fix missing Himax touchscreen firmware: himax_ic_incell_core.c includes
+# "himax_firmware_tcl.i" under HX_ZERO_FLASH, but that file was never pushed
+# to the kernel repo (branch 12). Fetch the real 340KB firmware from
+# LinuxGuy312's kernel tree, which carries the same driver with the file
+# present. Only fetch if missing, so a future upstream push wins.
+# (This killed build 304417 at 44%.)
+HX_FW=kernel/realme/RMX1805/drivers/input/touchscreen/himax_hx83102d/himax_firmware_tcl.i
+if [[ ! -f "$HX_FW" ]]; then
+  wget -q -O "$HX_FW" https://raw.githubusercontent.com/LinuxGuy312/android_kernel_realme_RMX1805/ArcticFox/drivers/input/touchscreen/himax_hx83102d/himax_firmware_tcl.i
+  [[ -s "$HX_FW" ]] || { echo "ERROR: failed to download himax firmware" >&2; exit 1; }
+  echo "himax firmware fetched."
+else
+  echo "himax firmware file present upstream, fetch not needed."
+fi
+
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
 
