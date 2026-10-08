@@ -80,6 +80,20 @@ if grep -qE '\\ $' device/realme/RMX1805/device.mk; then
 fi
 echo "device.mk line-continuation fix applied."
 
+# Fix a kernel Kconfig bug: drivers/Kconfig unconditionally sources
+# "drivers/kernelsu/Kconfig", but that directory was never pushed to the
+# kernel repo's branch 12 (no .gitmodules either) -- kconfig aborts the
+# defconfig step with 'can't open file "drivers/kernelsu/Kconfig"'.
+# This is what killed build 304178 at 6%. Safe to drop: the defconfig does
+# not enable CONFIG_KSU, and drivers/Makefile only builds it as
+# obj-$(CONFIG_KSU). (Idempotent; a no-op once fixed upstream.)
+sed -i '\|^source "drivers/kernelsu/Kconfig"$|d' kernel/realme/RMX1805/drivers/Kconfig
+if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; then
+  echo "ERROR: kernelsu Kconfig source still present in kernel drivers/Kconfig" >&2
+  exit 1
+fi
+echo "kernel Kconfig kernelsu fix applied."
+
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
 
