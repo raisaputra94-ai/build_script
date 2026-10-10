@@ -5,41 +5,6 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
-# ---------------------------------------------------------------------------
-# Upload a file to PixelDrain and print the share URL.
-# Never fails the build: any upload problem is a warning only; the zip
-# stays on the devspace either way.
-# ---------------------------------------------------------------------------
-pixeldrain_upload() {
-  local file="$1" label="${2:-$(basename "$file")}"
-  if [[ ! -f "$file" ]]; then
-    echo "WARNING: PixelDrain upload skipped ($label): not found: $file" >&2
-    return 0
-  fi
-  local size
-  size=$(du -h "$file" 2>/dev/null | cut -f1 || true)
-  echo "Uploading $label to PixelDrain: $(basename "$file") (${size:-?}) ..."
-  local resp
-  resp=$(curl -sS --retry 2 --retry-delay 5 -X PUT --upload-file "$file" \
-    "https://pixeldrain.com/api/file/$(basename "$file")") || {
-      echo "WARNING: PixelDrain upload failed ($label): curl error, zip remains on devspace" >&2
-      return 0
-  }
-  local file_id=""
-  if command -v jq >/dev/null 2>&1; then
-    file_id=$(echo "$resp" | jq -r '.id // empty' 2>/dev/null || true)
-  fi
-  if [[ -z "$file_id" ]]; then
-    file_id=$(echo "$resp" | grep -o '"id":"[^"]*"' | head -n1 | cut -d'"' -f4)
-  fi
-  if [[ -n "$file_id" ]]; then
-    echo "PixelDrain [$label]: https://pixeldrain.com/u/$file_id"
-  else
-    echo "WARNING: PixelDrain upload ($label) unexpected API response: $resp" >&2
-  fi
-  return 0
-}
-
 # Install compatibility libraries. Deliberately NO '|| true' here: under
 # 'set -e' a failed download aborts now with a clear error instead of dying
 # 3 hours into the build with a missing-library mystery. (dpkg -i over an
@@ -163,12 +128,6 @@ source build/envsetup.sh
 lunch lineage_RMX1805-userdebug
 mka bacon
 
-# Upload the bacon zip immediately: if the signing stage below ever fails
-# again (build 304624 died in make_key AFTER bacon completed), the ROM is
-# still retrievable via this link instead of SSH.
-BACON_ZIP=$(ls -t out/target/product/RMX1805/lineage-*-UNOFFICIAL-RMX1805.zip 2>/dev/null | head -n1 || true)
-pixeldrain_upload "$BACON_ZIP"
-
 # ---------------------------------------------------------------------------
 # Sign the ROM with private release keys.
 # Keys are generated once and reused on later runs. BACK UP ~/.android-certs
@@ -197,16 +156,22 @@ if [[ "$ALL_KEYS_PRESENT" != true ]]; then
   KEY_SUBJECT='/C=US/ST=California/L=Mountain View/O=RMX1805/OU=RMX1805/CN=RMX1805/emailAddress=android@android.com'
   for key in releasekey platform shared media networkstack; do
     echo "--- generating key: $key ---"
-    # </dev/null: make_key prompts for a key password; feed it EOF so it
-    # deterministically uses no password instead of hanging on stdin.
-    ./development/tools/make_key "$KEYS_DIR/$key" "$KEY_SUBJECT" < /dev/null || {
-      echo "ERROR: make_key failed for '$key'; check openssl and free disk space" >&2
-      exit 1
-    }
+    # NOTE: do NOT use development/tools/make_key here. It creates its named
+    # pipes with mknod(1), which requires root (CAP_MKNOD) and fails for the
+    # unprivileged build user (this killed builds 304624 and 304774). Plain
+    # openssl produces the identical .pk8 (DER) + .x509.pem format.
+    KEY_TMP="$KEYS_DIR/.tmp-$key.pem"
+    openssl genrsa -f4 -out "$KEY_TMP" 2048 || {
+      echo "ERROR: openssl genrsa failed for '$key'" >&2; rm -f "$KEY_TMP"; exit 1; }
+    openssl pkcs8 -topk8 -inform PEM -outform DER -in "$KEY_TMP" \
+      -out "$KEYS_DIR/$key.pk8" -nocrypt || {
+      echo "ERROR: openssl pkcs8 failed for '$key'" >&2; rm -f "$KEY_TMP"; exit 1; }
+    openssl req -new -x509 -sha256 -key "$KEY_TMP" \
+      -out "$KEYS_DIR/$key.x509.pem" -days 10000 -subj "$KEY_SUBJECT" || {
+      echo "ERROR: openssl req failed for '$key'" >&2; rm -f "$KEY_TMP"; exit 1; }
+    rm -f "$KEY_TMP"
     [[ -s "$KEYS_DIR/$key.pk8" && -s "$KEYS_DIR/$key.x509.pem" ]] || {
-      echo "ERROR: $key key files missing or empty after make_key" >&2
-      exit 1
-    }
+      echo "ERROR: $key key files missing or empty after generation" >&2; exit 1; }
   done
   echo "Keys generated. BACK THEM UP before you lose this machine."
 else
@@ -229,4 +194,3 @@ SIGNED_OTA="out/target/product/RMX1805/lineage-18.1-$(date +%Y%m%d)-UNOFFICIAL-R
 ./build/tools/releasetools/ota_from_target_files -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
-pixeldrain_upload "$SIGNED_OTA"
