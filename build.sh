@@ -190,6 +190,64 @@ echo "Signing target files: $TF_ZIP"
 SIGNED_TF="out/target/product/RMX1805/signed-target_files.zip"
 SIGNED_OTA="out/target/product/RMX1805/lineage-18.1-$(date +%Y%m%d)-UNOFFICIAL-RMX1805-signed.zip"
 
+# Python 3.12 removed the 'imp' module, but 18.1's releasetools still do
+# 'import imp' (build/tools/releasetools/common.py:25) — this killed build
+# 304900 in sign_target_files_apks with "No module named 'imp'". Provide a
+# minimal imp shim (find_module/load_module via importlib) through PYTHONPATH.
+# Only used for the two releasetools invocations below; the build itself is
+# unaffected.
+IMP_SHIM_DIR="$PWD/.imp_shim"
+mkdir -p "$IMP_SHIM_DIR"
+cat > "$IMP_SHIM_DIR/imp.py" <<'PYEOF'
+"""Minimal 'imp' replacement for Python 3.12+ (imp was removed in 3.12).
+Implements only what build/tools/releasetools/common.py uses:
+  imp.find_module(name, path) -> (file, pathname, description)
+  imp.load_module(name, file, pathname, description) -> module
+"""
+import importlib.util
+import os
+import sys
+
+PY_SOURCE = 1
+PKG_DIRECTORY = 5
+
+def find_module(name, path=None):
+    if path is None:
+        path = sys.path
+    for entry in path:
+        pkg_dir = os.path.join(entry, name)
+        if os.path.isdir(pkg_dir) and os.path.isfile(
+                os.path.join(pkg_dir, "__init__.py")):
+            return (None, pkg_dir, ("", "", PKG_DIRECTORY))
+        mod_file = os.path.join(entry, name + ".py")
+        if os.path.isfile(mod_file):
+            return (open(mod_file, "r"), mod_file, (".py", "r", PY_SOURCE))
+    raise ImportError("No module named %s" % name)
+
+def load_module(name, file, pathname, description):
+    suffix, mode, kind = description
+    if file is not None:
+        try:
+            file.close()
+        except Exception:
+            pass
+    if name in sys.modules:
+        return sys.modules[name]
+    if kind == PKG_DIRECTORY:
+        init_file = os.path.join(pathname, "__init__.py")
+        spec = importlib.util.spec_from_file_location(
+            name, init_file, submodule_search_locations=[pathname])
+    else:
+        spec = importlib.util.spec_from_file_location(name, pathname)
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load %s from %s" % (name, pathname))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+PYEOF
+export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
 ./build/tools/releasetools/sign_target_files_apks -o -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
 ./build/tools/releasetools/ota_from_target_files -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
