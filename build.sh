@@ -248,7 +248,11 @@ def load_module(name, file, pathname, description):
 PYEOF
 export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-./build/tools/releasetools/sign_target_files_apks -o -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
-./build/tools/releasetools/ota_from_target_files -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
+# -p out/host/linux-x86 is REQUIRED: common.py defaults search_path to
+# <script-dir>/.., but build/tools/releasetools/* are symlinks into
+# build/make/tools/, so realpath() resolves to the wrong tree and signapk.jar
+# is not found there (killed build 305649). The jar lives in the host out dir.
+./build/tools/releasetools/sign_target_files_apks -o -p out/host/linux-x86 -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
+./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
