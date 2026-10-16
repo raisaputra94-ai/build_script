@@ -94,6 +94,22 @@ if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; the
 fi
 echo "kernel Kconfig kernelsu fix applied."
 
+# Fix a Python 3 bug in AOSP releasetools: add_img_to_target_files.py's
+# AddVendor() opens its output_sink() file in TEXT mode ("w") but writes
+# binary image data (recovery_img.data) to it. The AddSystem() copy of the
+# same function correctly uses "wb". Under Python 2 this was harmless;
+# under Python 3 it dies with "TypeError: write() argument must be str,
+# not bytes". This is what killed build 305847 at the end of
+# sign_target_files_apks (all APKs were already signed). The bug exists in
+# AOSP android11-release itself, so patch it post-sync. (Idempotent.)
+ADD_IMG=build/make/tools/releasetools/add_img_to_target_files.py
+sed -i 's|open(os.path.join(OPTIONS.input_tmp, "VENDOR", fn), "w")|open(os.path.join(OPTIONS.input_tmp, "VENDOR", fn), "wb")|' "$ADD_IMG"
+if grep -q 'os.path.join(OPTIONS.input_tmp, "VENDOR", fn), "w")' "$ADD_IMG"; then
+  echo "ERROR: AddVendor output_sink still opens in text mode in $ADD_IMG" >&2
+  exit 1
+fi
+echo "releasetools AddVendor binary-mode fix applied."
+
 # Fix missing Himax touchscreen firmware: himax_ic_incell_core.c includes
 # "himax_firmware_tcl.i" under HX_ZERO_FLASH, but that file was never pushed
 # to the kernel repo (branch 12). Fetch the real 340KB firmware from
