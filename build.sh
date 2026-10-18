@@ -114,6 +114,8 @@ fi
 # SDM450 is safe to disable (separate SoC, MSM8953 unaffected)
 DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
 sed -i '/^CONFIG_ARCH_SDM450=y$/d' "$DEFCONFIG"
+# SDM632 also builds an extra DTB (sdm632-rumi.dtb); harmless but remove for cleanliness
+sed -i '/^CONFIG_ARCH_SDM632=y$/d' "$DEFCONFIG"
 if ! grep -q "^CONFIG_ARCH_MSM8953=y$" "$DEFCONFIG"; then
   echo "ERROR: CONFIG_ARCH_MSM8953 missing from $DEFCONFIG" >&2
   exit 1
@@ -150,8 +152,8 @@ LIGHTS_CPP=device/realme/RMX1805/lights/Lights.cpp
 if ! grep -q "MAX_LCD_BRIGHTNESS" "$LIGHTS_CPP"; then
   # Add the max brightness definition after the kLCDFile definitions
   sed -i 's|static const std::string kLCDFile2 = "/sys/class/backlight/panel0-backlight/brightness";|static const std::string kLCDFile2 = "/sys/class/backlight/panel0-backlight/brightness";\n\nstatic const uint32_t kMaxLcdBrightness = 2047;  // from /sys/class/leds/lcd-backlight/max_brightness|' "$LIGHTS_CPP"
-  # Scale the brightness in setLightState
-  sed -i 's|WriteToFile(mBacklightNode, RgbaToBrightness(state.color));|uint32_t brightness = RgbaToBrightness(state.color);\n            uint32_t scaled = (brightness * kMaxLcdBrightness) / 0xFF;\n            WriteToFile(mBacklightNode, scaled);|' "$LIGHTS_CPP"
+  # Scale the brightness in setLightState (braces required: C++ forbids declarations directly under case)
+  sed -i 's|WriteToFile(mBacklightNode, RgbaToBrightness(state.color));|{ uint32_t brightness = RgbaToBrightness(state.color); uint32_t scaled = (brightness * kMaxLcdBrightness) / 0xFF; WriteToFile(mBacklightNode, scaled); }|' "$LIGHTS_CPP"
   echo "Lights HAL backlight scaling fix applied."
 else
   echo "Lights HAL backlight scaling already present."
@@ -335,4 +337,5 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
+
 
