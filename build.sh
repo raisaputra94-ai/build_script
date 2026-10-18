@@ -99,17 +99,27 @@ echo "kernel Kconfig kernelsu fix applied."
 # DTBs for EVERY Qualcomm SoC (17 DTBs: APQ8016, SDM450, MSM8996, etc.).
 # The bootloader picks the WRONG DTB (APQ8016, no WCNSS config), causing
 # "wcnss_wlan_power failed: invalid hardware 0" and breaking WiFi/BT.
-# Remove the generic QCOM and SDM450 arch configs so only MSM8953 DTBs
-# are built. (Idempotent.)
-DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
-sed -i '/^CONFIG_ARCH_QCOM=y$/d' "$DEFCONFIG"
-sed -i '/^CONFIG_ARCH_SDM450=y$/d' "$DEFCONFIG"
-if grep -q "^CONFIG_ARCH_QCOM=y$" "$DEFCONFIG"; then
-  echo "ERROR: CONFIG_ARCH_QCOM still present in $DEFCONFIG" >&2
-  exit 1
+# CRITICAL: Do NOT remove CONFIG_ARCH_QCOM — ARCH_MSM8953 depends on it!
+# Instead, patch the qcom Makefile to skip the unwanted SoC DTBs.
+# (Idempotent.)
+QCOM_MAKEFILE=kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile
+if grep -q '^dtb-$(CONFIG_ARCH_QCOM).*apq8016' "$QCOM_MAKEFILE"; then
+  sed -i 's/^dtb-$(CONFIG_ARCH_QCOM)[[:space:]]*+= apq8016-sbc.dtb msm8916-mtp.dtb/# DISABLED: dtb-$(CONFIG_ARCH_QCOM) += apq8016-sbc.dtb msm8916-mtp.dtb/' "$QCOM_MAKEFILE"
+  sed -i 's/^dtb-$(CONFIG_ARCH_QCOM)[[:space:]]*+= msm8996-mtp.dtb/# DISABLED: dtb-$(CONFIG_ARCH_QCOM) += msm8996-mtp.dtb/' "$QCOM_MAKEFILE"
+  sed -i 's/^dtb-$(CONFIG_ARCH_QCOM)[[:space:]]*+= apq8096-db820c.dtb/# DISABLED: dtb-$(CONFIG_ARCH_QCOM) += apq8096-db820c.dtb/' "$QCOM_MAKEFILE"
+  echo "Unwanted QCOM DTBs disabled in Makefile (CONFIG_ARCH_QCOM kept for MSM8953 dependency)."
+else
+  echo "QCOM DTB Makefile already patched."
 fi
+# SDM450 is safe to disable (separate SoC, MSM8953 unaffected)
+DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
+sed -i '/^CONFIG_ARCH_SDM450=y$/d' "$DEFCONFIG"
 if ! grep -q "^CONFIG_ARCH_MSM8953=y$" "$DEFCONFIG"; then
   echo "ERROR: CONFIG_ARCH_MSM8953 missing from $DEFCONFIG" >&2
+  exit 1
+fi
+if ! grep -q "^CONFIG_ARCH_QCOM=y$" "$DEFCONFIG"; then
+  echo "ERROR: CONFIG_ARCH_QCOM missing from $DEFCONFIG (MSM8953 depends on it!)" >&2
   exit 1
 fi
 echo "kernel DTB arch fix applied (only MSM8953 DTBs will be built)."
@@ -145,21 +155,6 @@ if ! grep -q "MAX_LCD_BRIGHTNESS" "$LIGHTS_CPP"; then
   echo "Lights HAL backlight scaling fix applied."
 else
   echo "Lights HAL backlight scaling already present."
-fi
-
-# Fix missing IMEI: ninja's tree has rild.libargs but is missing rild.libpath.
-# The official RMX1805 tree has rild.libpath=/vendor/lib64/libril-qc-qmi-1.so
-# in system.prop. Without it, rild can't load the RIL library and IMEI is
-# never reported (SIM works via qcrild, but IMEI goes through rild).
-# (Idempotent.)
-VENDOR_PROP=device/realme/RMX1805/vendor.prop
-if ! grep -q "^rild.libpath=" "$VENDOR_PROP"; then
-  echo "" >> "$VENDOR_PROP"
-  echo "# RIL library path (missing in ninja tree, present in official)" >> "$VENDOR_PROP"
-  echo "rild.libpath=/vendor/lib64/libril-qc-qmi-1.so" >> "$VENDOR_PROP"
-  echo "rild.libpath fix applied."
-else
-  echo "rild.libpath already present."
 fi
 
 # Fix a Python 3 bug in AOSP releasetools: add_img_to_target_files.py's
@@ -340,3 +335,4 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
+
