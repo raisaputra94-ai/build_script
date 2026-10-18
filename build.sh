@@ -1,3 +1,4 @@
+# AI SLOP SCRIPT
 #!/bin/bash
 set -e
 
@@ -93,6 +94,73 @@ if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; the
   exit 1
 fi
 echo "kernel Kconfig kernelsu fix applied."
+
+# Fix kernel DTB bloat: the defconfig has CONFIG_ARCH_QCOM=y which builds
+# DTBs for EVERY Qualcomm SoC (17 DTBs: APQ8016, SDM450, MSM8996, etc.).
+# The bootloader picks the WRONG DTB (APQ8016, no WCNSS config), causing
+# "wcnss_wlan_power failed: invalid hardware 0" and breaking WiFi/BT.
+# Remove the generic QCOM and SDM450 arch configs so only MSM8953 DTBs
+# are built. (Idempotent.)
+DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
+sed -i '/^CONFIG_ARCH_QCOM=y$/d' "$DEFCONFIG"
+sed -i '/^CONFIG_ARCH_SDM450=y$/d' "$DEFCONFIG"
+if grep -q "^CONFIG_ARCH_QCOM=y$" "$DEFCONFIG"; then
+  echo "ERROR: CONFIG_ARCH_QCOM still present in $DEFCONFIG" >&2
+  exit 1
+fi
+if ! grep -q "^CONFIG_ARCH_MSM8953=y$" "$DEFCONFIG"; then
+  echo "ERROR: CONFIG_ARCH_MSM8953 missing from $DEFCONFIG" >&2
+  exit 1
+fi
+echo "kernel DTB arch fix applied (only MSM8953 DTBs will be built)."
+
+# Fix missing WiFi driver module config: ninja's BoardConfig.mk has
+# BOARD_WLAN_DEVICE := qcwcn but is missing WIFI_DRIVER_MODULE_NAME/PATH,
+# so the wlan.ko module is built but never loaded. Add the module config
+# so the WiFi HAL loads the driver. (Idempotent.)
+BOARD_MK=device/realme/RMX1805/BoardConfig.mk
+if ! grep -q "^WIFI_DRIVER_MODULE_NAME" "$BOARD_MK"; then
+  cat >> "$BOARD_MK" <<'EOF'
+
+# Wi-Fi driver module (fixes wlan.ko never loading)
+WIFI_DRIVER_MODULE_NAME := wlan
+WIFI_DRIVER_MODULE_PATH := /vendor/lib/modules/wlan.ko
+EOF
+  echo "WiFi driver module config added to BoardConfig.mk."
+else
+  echo "WiFi driver module config already present."
+fi
+
+# Fix lights HAL backlight scaling: ninja's Lights.cpp writes the raw 0-255
+# brightness value directly, but lcd-backlight/max_brightness is 2047.
+# Result: screen stuck dim (255/2047 = 12% brightness). The official RMX1805
+# tree scales via (brightness * maxBrightness / 0xFF). Patch the HAL to do
+# the same. (Idempotent.)
+LIGHTS_CPP=device/realme/RMX1805/lights/Lights.cpp
+if ! grep -q "MAX_LCD_BRIGHTNESS" "$LIGHTS_CPP"; then
+  # Add the max brightness definition after the kLCDFile definitions
+  sed -i 's|static const std::string kLCDFile2 = "/sys/class/backlight/panel0-backlight/brightness";|static const std::string kLCDFile2 = "/sys/class/backlight/panel0-backlight/brightness";\n\nstatic const uint32_t kMaxLcdBrightness = 2047;  // from /sys/class/leds/lcd-backlight/max_brightness|' "$LIGHTS_CPP"
+  # Scale the brightness in setLightState
+  sed -i 's|WriteToFile(mBacklightNode, RgbaToBrightness(state.color));|uint32_t brightness = RgbaToBrightness(state.color);\n            uint32_t scaled = (brightness * kMaxLcdBrightness) / 0xFF;\n            WriteToFile(mBacklightNode, scaled);|' "$LIGHTS_CPP"
+  echo "Lights HAL backlight scaling fix applied."
+else
+  echo "Lights HAL backlight scaling already present."
+fi
+
+# Fix missing IMEI: ninja's tree has rild.libargs but is missing rild.libpath.
+# The official RMX1805 tree has rild.libpath=/vendor/lib64/libril-qc-qmi-1.so
+# in system.prop. Without it, rild can't load the RIL library and IMEI is
+# never reported (SIM works via qcrild, but IMEI goes through rild).
+# (Idempotent.)
+VENDOR_PROP=device/realme/RMX1805/vendor.prop
+if ! grep -q "^rild.libpath=" "$VENDOR_PROP"; then
+  echo "" >> "$VENDOR_PROP"
+  echo "# RIL library path (missing in ninja tree, present in official)" >> "$VENDOR_PROP"
+  echo "rild.libpath=/vendor/lib64/libril-qc-qmi-1.so" >> "$VENDOR_PROP"
+  echo "rild.libpath fix applied."
+else
+  echo "rild.libpath already present."
+fi
 
 # Fix a Python 3 bug in AOSP releasetools: add_img_to_target_files.py's
 # AddVendor() opens its output_sink() file in TEXT mode ("w") but writes
