@@ -5,6 +5,36 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
+# === v27: stock-vendor compatibility, revised after the 2022-ROM deep dive ===
+# (2026-10-19). The 2022 unofficial ROM (18.1-20220208-UNOFFICIAL-RMX1805,
+# system+boot only, stock A.71 vendor at runtime) was downloaded, verified,
+# and fully analyzed: kernel 4.9.112-perf+ (byte-identical to the RMX1805-org
+# prebuilt kernel), 18 DTBs identical to stock with DTB #0 = SDM450+PMI8950
+# carrying qcom,has-pronto-hw, permissive cmdline, NO camera provider in the
+# system image (stock vendor declares/provides camera.provider v2.4
+# legacy/0), rild.libpath=/vendor/lib64/libril-qc-qmi-1.so (stock vendor
+# ships it), ro.treble.enabled=true.
+# v26 vs the earlier v25 draft:
+#  - DROPPED the PRODUCT_FULL_TREBLE_OVERRIDE removal: the 2022 system is
+#    Treble-enabled too and works fine on the stock vendor, so the override
+#    is not the differentiator.
+#  - KEPT the camera-provider removal (proven: 2022 system ships none).
+#  - ADDED system-side RIL props (rild.libpath=qmi-1): ninja's tree sets the
+#    hal-qmi path in vendor.prop, which lives in the vendor image we replace
+#    with stock. The qmi-1 library is the proven IMEI-working RIL path.
+#  - ADDED CONFIG_PRONTO_WLAN=y (built-in): stock's pronto_wlan.ko has
+#    vermagic 4.9.112 and cannot load on this 4.9.337 kernel; building the
+#    driver in removes the need for any vendor module file.
+# v27 adds: firmware_class.path=/vendor/firmware_mnt/image to the kernel
+#    cmdline. The 2022 working combo's cmdline carries it; ninja's does not.
+#    The WCNSS/WiFi firmware lives on the dedicated firmware partition
+#    (mounted at /vendor/firmware_mnt/image), NOT in vendor.img — without
+#    this path the built-in driver's firmware load fails. Zero risk: it is
+#    a standard kernel parameter, ignored if the path is absent.
+# Flash model: flash the built system.img, flash STOCK A.71 vendor.img
+# (~/workspace/stock_vendor.img), flash the built boot.img. The generated
+# vendor.img is ignored.
+
 # Install compatibility libraries. Deliberately NO '|| true' here: under
 # 'set -e' a failed download aborts now with a clear error instead of dying
 # 3 hours into the build with a missing-library mystery. (dpkg -i over an
@@ -128,21 +158,36 @@ if ! grep -q "^CONFIG_ARCH_QCOM=y$" "$DEFCONFIG"; then
 fi
 echo "kernel DTB arch fix applied (only MSM8953 DTBs will be built)."
 
-# Fix missing WiFi driver module config: ninja's BoardConfig.mk has
-# BOARD_WLAN_DEVICE := qcwcn but is missing WIFI_DRIVER_MODULE_NAME/PATH,
-# so the wlan.ko module is built but never loaded. Add the module config
-# so the WiFi HAL loads the driver. (Idempotent.)
-BOARD_MK=device/realme/RMX1805/BoardConfig.mk
-if ! grep -q "^WIFI_DRIVER_MODULE_NAME" "$BOARD_MK"; then
-  cat >> "$BOARD_MK" <<'EOF'
-
-# Wi-Fi driver module (fixes wlan.ko never loading)
-WIFI_DRIVER_MODULE_NAME := wlan
-WIFI_DRIVER_MODULE_PATH := /vendor/lib/modules/wlan.ko
-EOF
-  echo "WiFi driver module config added to BoardConfig.mk."
+# WiFi driver built-in (v26): the Pronto WLAN driver must NOT be a module.
+# The stock A.71 vendor ships pronto_wlan.ko with vermagic 4.9.112-perf+,
+# which can never load on this 4.9.337 kernel. Building CONFIG_PRONTO_WLAN=y
+# bakes the driver into the kernel — the same "built-in mode" WCNSS probe
+# proven working in the v10 BakaSU kernel log — so no vendor module file is
+# needed at all. Required for the stock-vendor flash model. (Idempotent.)
+if grep -q '^CONFIG_PRONTO_WLAN=m' "$DEFCONFIG"; then
+  sed -i 's/^CONFIG_PRONTO_WLAN=m/CONFIG_PRONTO_WLAN=y/' "$DEFCONFIG"
+  echo "Pronto WLAN driver set to built-in."
+elif grep -q '^CONFIG_PRONTO_WLAN=y' "$DEFCONFIG"; then
+  echo "Pronto WLAN driver already built-in."
 else
-  echo "WiFi driver module config already present."
+  echo "ERROR: CONFIG_PRONTO_WLAN not found in $DEFCONFIG" >&2
+  exit 1
+fi
+if ! grep -q '^CONFIG_PRONTO_WLAN=y$' "$DEFCONFIG"; then
+  echo "ERROR: Pronto WLAN built-in did not apply to $DEFCONFIG" >&2
+  exit 1
+fi
+
+# WiFi driver is built into the kernel (CONFIG_PRONTO_WLAN=y, see above), so
+# WIFI_DRIVER_MODULE_NAME/PATH must NOT be set — the WiFi HAL then uses the
+# built-in driver instead of insmod'ing a module. Remove any stale module
+# config to avoid confusion. (Idempotent.)
+BOARD_MK=device/realme/RMX1805/BoardConfig.mk
+if grep -q "^WIFI_DRIVER_MODULE_NAME" "$BOARD_MK"; then
+  sed -i '/^WIFI_DRIVER_MODULE_NAME/d; /^WIFI_DRIVER_MODULE_PATH/d' "$BOARD_MK"
+  echo "Stale WiFi module config removed from BoardConfig.mk (driver is built-in)."
+else
+  echo "No WiFi module config present (driver is built-in)."
 fi
 
 # Boot permissive by default: the ninja sepolicy has 309+ denials that stall
@@ -161,6 +206,79 @@ else
   echo "Permissive cmdline already present."
 fi
 
+# Firmware loader path (v27): the WCNSS/WiFi firmware is NOT in vendor.img —
+# it lives on the dedicated firmware partition, mounted at
+# /vendor/firmware_mnt/image at boot. The 2022 working combo's cmdline sets
+# firmware_class.path to it; ninja's cmdline does not, so the built-in
+# Pronto driver's firmware request would fail. Mirror the proven value.
+# (Idempotent.)
+if ! grep -q "firmware_class.path=" "$BOARD_MK"; then
+  cat >> "$BOARD_MK" <<'EOF'
+
+# Firmware loader path (WCNSS/WiFi firmware is on the firmware partition)
+BOARD_KERNEL_CMDLINE += firmware_class.path=/vendor/firmware_mnt/image
+EOF
+  echo "firmware_class.path added to BoardConfig.mk."
+else
+  echo "firmware_class.path already present."
+fi
+if ! grep -q "firmware_class.path=/vendor/firmware_mnt/image" "$BOARD_MK"; then
+  echo "ERROR: firmware_class.path did not apply to $BOARD_MK" >&2
+  exit 1
+fi
+
+# === Stock-vendor runtime compatibility (v27) ===
+# The generated vendor.img is IGNORED at flash time: flash the built
+# system.img, the STOCK A.71 vendor.img (~/workspace/stock_vendor.img), and
+# the built boot.img. These patches align the system image with the stock
+# vendor, mirroring the verified 2022 working combo.
+#
+# 1. Use the vendor camera HAL, not the source-built generic one. Ninja's
+#    device.mk lists android.hardware.camera.provider@2.4-impl and -service
+#    in PRODUCT_PACKAGES, building the generic AOSP HAL from source. It
+#    enumerates 0 cameras against the OPPO stack. The 2022 system ships NO
+#    camera provider at all; the stock vendor declares and provides
+#    camera.provider v2.4 legacy/0 itself. Remove both lines. (Idempotent.)
+DEVICE_MK=device/realme/RMX1805/device.mk
+if grep -q "android.hardware.camera.provider@2.4-impl" "$DEVICE_MK"; then
+  sed -i '/android.hardware.camera.provider@2.4-impl/d' "$DEVICE_MK"
+  sed -i '/android.hardware.camera.provider@2.4-service/d' "$DEVICE_MK"
+  echo "Generic camera provider removed from device.mk (stock vendor HAL will be used)."
+else
+  echo "Generic camera provider already removed from device.mk."
+fi
+if grep -q "android.hardware.camera.provider@2.4-impl\|android.hardware.camera.provider@2.4-service" "$DEVICE_MK"; then
+  echo "ERROR: camera provider still present in $DEVICE_MK" >&2
+  exit 1
+fi
+#
+# 2. RIL props for the stock vendor, system-side. Ninja's tree sets
+#    rild.libpath=/vendor/lib64/libril-qc-hal-qmi.so in vendor.prop — but
+#    vendor.prop lives in the vendor image we replace with stock. The stock
+#    vendor's own build.prop already sets rild.libpath to the qmi-1 library,
+#    and the 2022 working system sets the same value system-side, so mirror
+#    it here for exact parity with the proven combo (belt and braces — the
+#    values are identical, so precedence cannot matter). The qmi-1 RIL path
+#    is the proven IMEI-working one (ninja's hal-qmi path shows RIL up but
+#    no IMEI).
+#    (Idempotent.)
+SYSTEM_PROP=device/realme/RMX1805/system.prop
+if ! grep -q "^rild.libpath=/vendor/lib64/libril-qc-qmi-1.so" "$SYSTEM_PROP"; then
+  cat >> "$SYSTEM_PROP" <<'EOF'
+
+# Stock-vendor RIL compat (mirrors 2022 working combo; stock vendor ships libril-qc-qmi-1.so)
+rild.libpath=/vendor/lib64/libril-qc-qmi-1.so
+rild.libargs=-d /dev/smd0
+EOF
+  echo "Stock-vendor RIL props added to system.prop."
+else
+  echo "Stock-vendor RIL props already present in system.prop."
+fi
+if ! grep -q "^rild.libpath=/vendor/lib64/libril-qc-qmi-1.so" "$SYSTEM_PROP"; then
+  echo "ERROR: RIL props did not apply to $SYSTEM_PROP" >&2
+  exit 1
+fi
+
 # Fix lights HAL backlight scaling: ninja's Lights.cpp writes the raw 0-255
 # brightness value directly, but lcd-backlight/max_brightness is 2047.
 # Result: screen stuck dim (255/2047 = 12% brightness). The official RMX1805
@@ -175,34 +293,6 @@ if ! grep -q "MAX_LCD_BRIGHTNESS" "$LIGHTS_CPP"; then
   echo "Lights HAL backlight scaling fix applied."
 else
   echo "Lights HAL backlight scaling already present."
-fi
-
-# Stock vendor compatibility: ninja's BoardConfig.mk sets
-# PRODUCT_FULL_TREBLE_OVERRIDE := true, which enforces strict Android 11
-# vendor interface. The Android 9 stock vendor (with working OPPO camera)
-# doesn't implement it, causing boot failures. The 2022 RMX1805 org build
-# (which had working camera) did NOT set this. Remove it for stock vendor
-# compatibility. (Idempotent.)
-if grep -q "^PRODUCT_FULL_TREBLE_OVERRIDE := true" "$BOARD_MK"; then
-  sed -i 's/^PRODUCT_FULL_TREBLE_OVERRIDE := true/# PRODUCT_FULL_TREBLE_OVERRIDE disabled for stock vendor compat (was true)/' "$BOARD_MK"
-  echo "Full Treble override disabled for stock vendor compatibility."
-else
-  echo "Full Treble override already disabled or absent."
-fi
-
-# Use vendor camera HAL instead of building generic QCOM one: ninja's
-# device.mk includes android.hardware.camera.provider@2.4-impl in
-# PRODUCT_PACKAGES, which builds the generic AOSP HAL from source.
-# The 2022 RMX1805 org build (working camera) did NOT include it,
-# relying on the stock vendor's OPPO-customized HAL instead.
-# Remove it so the vendor's HAL is used. (Idempotent.)
-DEVICE_MK=device/realme/RMX1805/device.mk
-if grep -q "android.hardware.camera.provider@2.4-impl" "$DEVICE_MK"; then
-  sed -i '/android.hardware.camera.provider@2.4-impl/d' "$DEVICE_MK"
-  sed -i '/android.hardware.camera.provider@2.4-service/d' "$DEVICE_MK"
-  echo "Generic QCOM camera HAL removed from device.mk (vendor HAL will be used)."
-else
-  echo "Generic QCOM camera HAL already removed from device.mk."
 fi
 
 # Fix a Python 3 bug in AOSP releasetools: add_img_to_target_files.py's
