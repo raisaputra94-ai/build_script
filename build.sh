@@ -95,27 +95,11 @@ if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; the
 fi
 echo "kernel Kconfig kernelsu fix applied."
 
-# Fix kernel DTB bloat: the defconfig has CONFIG_ARCH_QCOM=y which builds
-# DTBs for EVERY Qualcomm SoC (17 DTBs: APQ8016, SDM450, MSM8996, etc.).
-# The bootloader picks the WRONG DTB (APQ8016, no WCNSS config), causing
-# "wcnss_wlan_power failed: invalid hardware 0" and breaking WiFi/BT.
-# CRITICAL: Do NOT remove CONFIG_ARCH_QCOM — ARCH_MSM8953 depends on it!
-# Instead, patch the qcom Makefile to skip the unwanted SoC DTBs.
-# (Idempotent.)
-QCOM_MAKEFILE=kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile
-if grep -q '^dtb-$(CONFIG_ARCH_QCOM).*apq8016' "$QCOM_MAKEFILE"; then
-  sed -i 's/^dtb-$(CONFIG_ARCH_QCOM)[[:space:]]*+= apq8016-sbc.dtb msm8916-mtp.dtb/# DISABLED: dtb-$(CONFIG_ARCH_QCOM) += apq8016-sbc.dtb msm8916-mtp.dtb/' "$QCOM_MAKEFILE"
-  sed -i 's/^dtb-$(CONFIG_ARCH_QCOM)[[:space:]]*+= msm8996-mtp.dtb/# DISABLED: dtb-$(CONFIG_ARCH_QCOM) += msm8996-mtp.dtb/' "$QCOM_MAKEFILE"
-  sed -i 's/^dtb-$(CONFIG_ARCH_QCOM)[[:space:]]*+= apq8096-db820c.dtb/# DISABLED: dtb-$(CONFIG_ARCH_QCOM) += apq8096-db820c.dtb/' "$QCOM_MAKEFILE"
-  echo "Unwanted QCOM DTBs disabled in Makefile (CONFIG_ARCH_QCOM kept for MSM8953 dependency)."
-else
-  echo "QCOM DTB Makefile already patched."
-fi
-# SDM450 is safe to disable (separate SoC, MSM8953 unaffected)
+# NOTE: DTB fix REMOVED in v21 — disabling the APQ8016 DTB risks the bootloader
+# picking a wrong MSM8953 variant that doesn't boot. The v14 (with APQ8016 first)
+# at least boots. WiFi/BT/camera remain broken until a safer DTB selection method
+# is found. (The SDM450/SDM632 defconfig removals are also removed for safety.)
 DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
-sed -i '/^CONFIG_ARCH_SDM450=y$/d' "$DEFCONFIG"
-# SDM632 also builds an extra DTB (sdm632-rumi.dtb); harmless but remove for cleanliness
-sed -i '/^CONFIG_ARCH_SDM632=y$/d' "$DEFCONFIG"
 if ! grep -q "^CONFIG_ARCH_MSM8953=y$" "$DEFCONFIG"; then
   echo "ERROR: CONFIG_ARCH_MSM8953 missing from $DEFCONFIG" >&2
   exit 1
@@ -141,6 +125,22 @@ EOF
   echo "WiFi driver module config added to BoardConfig.mk."
 else
   echo "WiFi driver module config already present."
+fi
+
+# Boot permissive by default: the ninja sepolicy has 309+ denials that stall
+# boot in enforcing mode. Add androidboot.selinux=permissive to the kernel
+# cmdline so the ROM boots without manual boot.img patching. The long-term
+# goal is enforcing via sepolicy fixes, but permissive is needed for bring-up.
+# (Idempotent.)
+if ! grep -q "androidboot.selinux=permissive" "$BOARD_MK"; then
+  cat >> "$BOARD_MK" <<'EOF'
+
+# Boot SELinux permissive (sepolicy bring-up pending)
+BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive
+EOF
+  echo "Permissive cmdline added to BoardConfig.mk."
+else
+  echo "Permissive cmdline already present."
 fi
 
 # Fix lights HAL backlight scaling: ninja's Lights.cpp writes the raw 0-255
@@ -337,5 +337,4 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
-
 
