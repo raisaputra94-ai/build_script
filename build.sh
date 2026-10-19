@@ -1,4 +1,3 @@
-# AI SLOP SCRIPT
 #!/bin/bash
 set -e
 
@@ -95,44 +94,29 @@ if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; the
 fi
 echo "kernel Kconfig kernelsu fix applied."
 
-# Fix DTB selection (v23): Reorder Makefile so MSM8953 DTBs come FIRST.
-# The bootloader picks DTB #1 (currently APQ8016, no WCNSS/VFE). By moving the
-# MSM8953 DTBs to the front, the bootloader gets a DTB with has-pronto-hw,
-# WCNSS, VFE, and modem definitions. All DTBs are kept (no removal), so if the
-# bootloader picks by msm-id instead of position, it still works.
-# Verified: all 4 MSM8953 DTB variants in the working boot.img have the required
-# definitions (extracted and analyzed from boot_1_ocpf.img, 2026-10-19).
-# (Idempotent.)
-QCOM_MAKEFILE=kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile
-if ! grep -q "^# MSM8953 DTBs moved to front" "$QCOM_MAKEFILE"; then
-  # Extract the MSM8953 DTB line, remove it from its current position,
-  # and prepend it to the top of the file with a marker comment.
-  MSM8953_LINE=$(grep "^dtb-\$(CONFIG_ARCH_MSM8953)" "$QCOM_MAKEFILE" | head -1)
-  if [ -n "$MSM8953_LINE" ]; then
-    # Get the full multi-line entry (ends at line without trailing backslash)
-    # Simpler: use awk to move the block
-    cp "$QCOM_MAKEFILE" "$QCOM_MAKEFILE.bak"
-    python3 << 'PYEOF'
-import re
-with open("kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile") as f:
-    content = f.read()
-# Find the MSM8953 dtb block (from dtb-$(CONFIG_ARCH_MSM8953) to line without backslash)
-pattern = r'^dtb-\$\(CONFIG_ARCH_MSM8953\) \+= .*?(?<!\\)\n'
-m = re.search(pattern, content, re.MULTILINE | re.DOTALL)
-if m:
-    block = m.group(0)
-    content = content.replace(block, '', 1)
-    content = "# MSM8953 DTBs moved to front (WiFi/BT/camera fix)\n" + block + content
-    with open("kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile", "w") as f:
-        f.write(content)
-    print("MSM8953 DTBs moved to front of Makefile.")
-else:
-    print("WARNING: MSM8953 DTB block not found!")
-PYEOF
-  fi
+# DTB single-select (v24): append ONLY sdm450-pmi632.dtb — the RMX1805 DTB.
+# Blob-level verification (dtb-single-select-research.md, 2026-10-19):
+# - The 4 wildcard DTBs (apq8016-sbc, msm8916-mtp, apq8096-db820c, msm8996-mtp)
+#   have no qcom,msm-id; bootloader picks #0 apq8016-sbc which lacks
+#   qcom,has-pronto-hw and vfe → WiFi/BT/camera dead.
+# - The correct DTB is sdm450-pmi632.dtb: msm-id 0x152 = SDM450 (actual RMX1805
+#   SoC), PMI632 PMIC with the RMX1805 OPPO battery profile, has-pronto-hw
+#   present, vfe present.
+# - v20's CONFIG_ARCH_SDM450 removal would have DELETED this correct DTB.
+# Method: CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES (arch/arm64/Kconfig:1209).
+# When set, only the named DTBs are appended — zero selection ambiguity, no
+# Makefile surgery. (Idempotent.)
+DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
+if grep -q '^CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES=' "$DEFCONFIG"; then
+  sed -i 's|^CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES=.*|CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="qcom/sdm450-pmi632"|' "$DEFCONFIG"
 else
-  echo "MSM8953 DTBs already at front of Makefile."
+  printf '%s\n' 'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="qcom/sdm450-pmi632"' >> "$DEFCONFIG"
 fi
+if ! grep -q '^CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="qcom/sdm450-pmi632"$' "$DEFCONFIG"; then
+  echo "ERROR: DTB single-select did not apply to $DEFCONFIG" >&2
+  exit 1
+fi
+echo "DTB single-select applied: only qcom/sdm450-pmi632.dtb will be appended."
 DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
 if ! grep -q "^CONFIG_ARCH_MSM8953=y$" "$DEFCONFIG"; then
   echo "ERROR: CONFIG_ARCH_MSM8953 missing from $DEFCONFIG" >&2
@@ -191,6 +175,34 @@ if ! grep -q "MAX_LCD_BRIGHTNESS" "$LIGHTS_CPP"; then
   echo "Lights HAL backlight scaling fix applied."
 else
   echo "Lights HAL backlight scaling already present."
+fi
+
+# Stock vendor compatibility: ninja's BoardConfig.mk sets
+# PRODUCT_FULL_TREBLE_OVERRIDE := true, which enforces strict Android 11
+# vendor interface. The Android 9 stock vendor (with working OPPO camera)
+# doesn't implement it, causing boot failures. The 2022 RMX1805 org build
+# (which had working camera) did NOT set this. Remove it for stock vendor
+# compatibility. (Idempotent.)
+if grep -q "^PRODUCT_FULL_TREBLE_OVERRIDE := true" "$BOARD_MK"; then
+  sed -i 's/^PRODUCT_FULL_TREBLE_OVERRIDE := true/# PRODUCT_FULL_TREBLE_OVERRIDE disabled for stock vendor compat (was true)/' "$BOARD_MK"
+  echo "Full Treble override disabled for stock vendor compatibility."
+else
+  echo "Full Treble override already disabled or absent."
+fi
+
+# Use vendor camera HAL instead of building generic QCOM one: ninja's
+# device.mk includes android.hardware.camera.provider@2.4-impl in
+# PRODUCT_PACKAGES, which builds the generic AOSP HAL from source.
+# The 2022 RMX1805 org build (working camera) did NOT include it,
+# relying on the stock vendor's OPPO-customized HAL instead.
+# Remove it so the vendor's HAL is used. (Idempotent.)
+DEVICE_MK=device/realme/RMX1805/device.mk
+if grep -q "android.hardware.camera.provider@2.4-impl" "$DEVICE_MK"; then
+  sed -i '/android.hardware.camera.provider@2.4-impl/d' "$DEVICE_MK"
+  sed -i '/android.hardware.camera.provider@2.4-service/d' "$DEVICE_MK"
+  echo "Generic QCOM camera HAL removed from device.mk (vendor HAL will be used)."
+else
+  echo "Generic QCOM camera HAL already removed from device.mk."
 fi
 
 # Fix a Python 3 bug in AOSP releasetools: add_img_to_target_files.py's
