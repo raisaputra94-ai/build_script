@@ -95,10 +95,44 @@ if grep -q 'drivers/kernelsu/Kconfig' kernel/realme/RMX1805/drivers/Kconfig; the
 fi
 echo "kernel Kconfig kernelsu fix applied."
 
-# NOTE: DTB fix REMOVED in v21 — disabling the APQ8016 DTB risks the bootloader
-# picking a wrong MSM8953 variant that doesn't boot. The v14 (with APQ8016 first)
-# at least boots. WiFi/BT/camera remain broken until a safer DTB selection method
-# is found. (The SDM450/SDM632 defconfig removals are also removed for safety.)
+# Fix DTB selection (v23): Reorder Makefile so MSM8953 DTBs come FIRST.
+# The bootloader picks DTB #1 (currently APQ8016, no WCNSS/VFE). By moving the
+# MSM8953 DTBs to the front, the bootloader gets a DTB with has-pronto-hw,
+# WCNSS, VFE, and modem definitions. All DTBs are kept (no removal), so if the
+# bootloader picks by msm-id instead of position, it still works.
+# Verified: all 4 MSM8953 DTB variants in the working boot.img have the required
+# definitions (extracted and analyzed from boot_1_ocpf.img, 2026-10-19).
+# (Idempotent.)
+QCOM_MAKEFILE=kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile
+if ! grep -q "^# MSM8953 DTBs moved to front" "$QCOM_MAKEFILE"; then
+  # Extract the MSM8953 DTB line, remove it from its current position,
+  # and prepend it to the top of the file with a marker comment.
+  MSM8953_LINE=$(grep "^dtb-\$(CONFIG_ARCH_MSM8953)" "$QCOM_MAKEFILE" | head -1)
+  if [ -n "$MSM8953_LINE" ]; then
+    # Get the full multi-line entry (ends at line without trailing backslash)
+    # Simpler: use awk to move the block
+    cp "$QCOM_MAKEFILE" "$QCOM_MAKEFILE.bak"
+    python3 << 'PYEOF'
+import re
+with open("kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile") as f:
+    content = f.read()
+# Find the MSM8953 dtb block (from dtb-$(CONFIG_ARCH_MSM8953) to line without backslash)
+pattern = r'^dtb-\$\(CONFIG_ARCH_MSM8953\) \+= .*?(?<!\\)\n'
+m = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+if m:
+    block = m.group(0)
+    content = content.replace(block, '', 1)
+    content = "# MSM8953 DTBs moved to front (WiFi/BT/camera fix)\n" + block + content
+    with open("kernel/realme/RMX1805/arch/arm64/boot/dts/qcom/Makefile", "w") as f:
+        f.write(content)
+    print("MSM8953 DTBs moved to front of Makefile.")
+else:
+    print("WARNING: MSM8953 DTB block not found!")
+PYEOF
+  fi
+else
+  echo "MSM8953 DTBs already at front of Makefile."
+fi
 DEFCONFIG=kernel/realme/RMX1805/arch/arm64/configs/MSM_18355_msm8953-perf_defconfig
 if ! grep -q "^CONFIG_ARCH_MSM8953=y$" "$DEFCONFIG"; then
   echo "ERROR: CONFIG_ARCH_MSM8953 missing from $DEFCONFIG" >&2
@@ -337,4 +371,3 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
-
