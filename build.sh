@@ -5,7 +5,12 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
-# === v0: RMX1805-org tree, clean slate (2026-10-20) ===
+# === v1: RMX1805-org tree (v0 + releasetools AVB salt fix) ===
+# v1 adds one patch vs v0: common.py's AVB salt sha256(fingerprint) crashed
+# sign_target_files_apks in build 306563 ("Strings must be encoded before
+# hashing") — the build had SUCCEEDED; only signing died. See the patch
+# block below. Everything else is identical to v0.
+#
 # After v27 (ninja tree + stock vendor) dropped to fastboot even with the
 # proven 2022 boot.img swapped in — exonerating the kernel and proving the
 # ninja system cannot boot on the stock vendor — we reset to v0 on the
@@ -159,6 +164,22 @@ if grep -q 'os.path.join(OPTIONS.input_tmp, "VENDOR", fn), "w")' "$ADD_IMG"; the
   exit 1
 fi
 echo "releasetools AddVendor binary-mode fix applied."
+
+# Fix ANOTHER Python 3 bug in AOSP releasetools (build 306563): common.py's
+# LoadInfoDict computes the AVB salt with sha256(fingerprint) where
+# 'fingerprint' is a str — hashlib requires bytes, so it dies with
+# "TypeError: Strings must be encoded before hashing". This only triggers
+# when AVB is enabled (the org tree sets BOARD_AVB_ENABLE := true; ninja's
+# tree did not, which is why v27 signing never hit it). The build itself had
+# already SUCCEEDED — the crash was purely in sign_target_files_apks.
+# One-line fix: encode the fingerprint. Idempotent.
+COMMON_PY=build/make/tools/releasetools/common.py
+sed -i 's|sha256(fingerprint)|sha256(fingerprint.encode())|' "$COMMON_PY"
+if grep -q 'sha256(fingerprint)' "$COMMON_PY"; then
+  echo "ERROR: AVB salt sha256 still unencoded in $COMMON_PY" >&2
+  exit 1
+fi
+echo "releasetools AVB salt encode fix applied."
 
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
