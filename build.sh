@@ -5,6 +5,29 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
+# === v10: RMX1805-org tree (v9 + density via BoardConfig TARGET_SCREEN_DENSITY) ===
+# v10 changes only HOW v8/v9 baked the display density: the system.prop
+# append is removed, and the script instead retargets BoardConfig.mk's
+# existing TARGET_SCREEN_DENSITY := 384 to 360 — the build's own knob
+# for ro.sf.lcd_density (the user's pointer). The device-init
+# replacement (v9), the SELinux patch, and the gate are unchanged.
+#
+# === v9: RMX1805-org tree (v8 + device init: fingerprint spoof removed, heap tier added) ===
+# v9 adds ONE post-sync step to v8: it replaces the org device tree's
+# init/init_msm8953.cpp with a corrected embedded copy — the Pixel 4 XL
+# ("coral") fingerprint/description spoof is removed (the build keeps
+# its own original build fingerprint) and check_device() gains the
+# missing 3072 heap tier. Everything else, including the SELinux patch
+# and the in-build gate, is byte-identical to v8/v7.
+#
+# === v8: RMX1805-org tree (v7 + display density baked in) ===
+# v8 changes NO build behavior beyond one property: post-sync it sets
+# ro.sf.lcd_density=360 in the org device tree's system.prop (the user's
+# display preference, baked in so it survives factory resets — the
+# 'wm density 360' runtime override does not). The SELinux patch, the
+# in-build gate, and every other step are byte-identical to v7,
+# including everything the external review checked.
+#
 # === v7: RMX1805-org tree (v6 + citation wording only) ===
 # v7 changes NO build behavior: the patch, the gate, and every step are
 # byte-identical to v6. It only corrects the citation in the v6 note
@@ -347,6 +370,176 @@ if ! grep -q "Use an empty list to represent unknown perm" external/selinux/libs
   exit 1
 fi
 echo "selinux resolver drop-unresolved-perms patch applied."
+
+# DISPLAY DENSITY (v10): the build's own knob. BoardConfig.mk already
+# sets TARGET_SCREEN_DENSITY := 384, which the build turns into
+# ro.sf.lcd_density (and uses for the aapt preferred config). Point it
+# at 360 (user preference; on this 720-wide panel = a 320dp-wide
+# layout). This REPLACES the v8/v9 system.prop append: setting the
+# property in both places would duplicate it in build.prop with the
+# winner decided by file order. Idempotent; fail fast if not set.
+BOARDCONFIG=device/oppo/RMX1805/BoardConfig.mk
+if grep -q '^TARGET_SCREEN_DENSITY := ' "$BOARDCONFIG"; then
+  sed -i 's|^TARGET_SCREEN_DENSITY := .*|TARGET_SCREEN_DENSITY := 360|' "$BOARDCONFIG"
+else
+  echo 'TARGET_SCREEN_DENSITY := 360' >> "$BOARDCONFIG"
+fi
+if ! grep -q '^TARGET_SCREEN_DENSITY := 360$' "$BOARDCONFIG"; then
+  echo "ERROR: TARGET_SCREEN_DENSITY not 360 in $BOARDCONFIG after patch" >&2
+  exit 1
+fi
+echo "display density set: TARGET_SCREEN_DENSITY := 360."
+
+# DEVICE INIT (v9): replace init/init_msm8953.cpp with the corrected
+# version embedded below. Two changes vs the org tree: (1) the Pixel 4 XL
+# ("coral") fingerprint/description spoof in vendor_load_properties() is
+# REMOVED — the build keeps its own original build fingerprint;
+# (2) check_device() gains the missing 3072 heap tier (values = AOSP's
+# 4096 profile) so the 3GB variant no longer falls through to the 2048
+# profile. Every other heap value was verified byte-identical to AOSP
+# android-11.0.0_r46's dalvik-heap profiles. Fail fast if the written
+# file does not carry both changes.
+INIT_CPP=device/oppo/RMX1805/init/init_msm8953.cpp
+cat > "$INIT_CPP" <<'CPPEOF'
+/*
+   Copyright (c) 2016, The CyanogenMod Project
+   Copyright (c) 2019-2020, The LineageOS Project
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are
+   met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+    * Neither the name of The Linux Foundation nor the names of its
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+   WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
+   ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+   BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+   BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+   OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+   IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#include <cstdlib>
+#include <fstream>
+#include <string.h>
+#include <sys/sysinfo.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <android-base/properties.h>
+#define _REALLY_INCLUDE_SYS__SYSTEM_PROPERTIES_H_
+#include <sys/_system_properties.h>
+
+#include "property_service.h"
+#include "vendor_init.h"
+
+using ::android::base::SetProperty;
+
+char const *heapstartsize;
+char const *heapgrowthlimit;
+char const *heapsize;
+char const *heapminfree;
+char const *heapmaxfree;
+char const *heaptargetutilization;
+
+void check_device()
+{
+    struct sysinfo sys;
+
+    sysinfo(&sys);
+
+    if (sys.totalram > 5072ull * 1024 * 1024) {
+        // from - phone-xhdpi-6144-dalvik-heap.mk
+        heapstartsize = "16m";
+        heapgrowthlimit = "256m";
+        heapsize = "512m";
+        heaptargetutilization = "0.5";
+        heapminfree = "8m";
+        heapmaxfree = "32m";
+    } else if (sys.totalram > 3072ull * 1024 * 1024) {
+        // from - phone-xxhdpi-4096-dalvik-heap.mk
+        heapstartsize = "8m";
+        heapgrowthlimit = "192m";
+        heapsize = "512m";
+        heaptargetutilization = "0.6";
+        heapminfree = "8m";
+        heapmaxfree = "16m";
+    } else if (sys.totalram > 2048ull * 1024 * 1024) {
+        // 3072 tier (added): AOSP ships no 3072 profile, so the 3GB
+        // variant used to fall through to the 2048 profile below.
+        // Values are the 4096 profile's: same app-visible caps
+        // (growthlimit/heapsize), but the GC free-list behaviour a
+        // 3GB device can afford (minfree 8m vs 512k, maxfree 16m vs
+        // 8m, targetutilization 0.6 vs 0.75) — less GC churn.
+        heapstartsize = "8m";
+        heapgrowthlimit = "192m";
+        heapsize = "512m";
+        heaptargetutilization = "0.6";
+        heapminfree = "8m";
+        heapmaxfree = "16m";
+    } else {
+        // from - phone-xhdpi-2048-dalvik-heap.mk
+        heapstartsize = "8m";
+        heapgrowthlimit = "192m";
+        heapsize = "512m";
+        heaptargetutilization = "0.75";
+        heapminfree = "512k";
+        heapmaxfree = "8m";
+    }
+}
+
+void property_override(char const prop[], char const value[], bool add = true)
+{
+    auto pi = (prop_info *) __system_property_find(prop);
+
+    if (pi != nullptr) {
+        __system_property_update(pi, value, strlen(value));
+    } else if (add) {
+        __system_property_add(prop, strlen(prop), value, strlen(value));
+    }
+}
+
+void property_override_dual(char const system_prop[], char const vendor_prop[],
+    char const value[])
+{
+    property_override(system_prop, value);
+    property_override(vendor_prop, value);
+}
+
+void vendor_load_properties()
+{
+    // dalvik
+    check_device();
+    property_override("dalvik.vm.heapstartsize", heapstartsize);
+    property_override("dalvik.vm.heapgrowthlimit", heapgrowthlimit);
+    property_override("dalvik.vm.heapsize", heapsize);
+    property_override("dalvik.vm.heaptargetutilization", heaptargetutilization);
+    property_override("dalvik.vm.heapminfree", heapminfree);
+    property_override("dalvik.vm.heapmaxfree", heapmaxfree);
+
+    // No fingerprint/description override: the build keeps its own
+    // original build fingerprint (the stock tree spoofed a Pixel 4 XL
+    // "coral" fingerprint here; removed at the user's request).
+}
+CPPEOF
+if grep -q "google/coral/coral" "$INIT_CPP"; then
+  echo "ERROR: fingerprint spoof still present in $INIT_CPP" >&2
+  exit 1
+fi
+grep -q "3072 tier" "$INIT_CPP" || {
+  echo "ERROR: 3072 heap tier missing in $INIT_CPP" >&2; exit 1; }
+echo "device init replaced: original fingerprint kept, 3072 heap tier added."
 
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
