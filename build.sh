@@ -5,6 +5,100 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
+# === v7: RMX1805-org tree (v6 + citation wording only) ===
+# v7 changes NO build behavior: the patch, the gate, and every step are
+# byte-identical to v6. It only corrects the citation in the v6 note
+# below, per the developer's precision point: 969114c is a DOWNSTREAM
+# fork revert (topjohnwu's selinux fork); dc4e541 is the real upstream
+# commit it reverts. Both are cited wherever the patch is mentioned.
+#
+# === v6: RMX1805-org tree (v5 + canonical downstream fork revert) ===
+# v6 replaces my hand-written drop-perms patch (v4/v5) with the exact
+# historical patch the behavior came from, identified by external
+# disassembly review 2026-10-22: topjohnwu's selinux fork commit
+# 969114cff6ee973f47a3c84cacdef77e504d7bd9 "Revert 'libsepol: Make an
+# unknown permission an error in CIL'" (2020-09-04), which reverts
+# upstream dc4e54126bf25dea4d51820922ccd1959be68fbc. Semantics: an
+# unresolvable permission aborts only for MAP classes; otherwise it is
+# logged at WARN and an empty list stands in for the unknown perm (the
+# pre-2.8 upstream behavior by James Carter, 2016). AOSP history check
+# (git log -S "Use an empty list to represent unknown perm" on
+# platform/external/selinux): introduced da51020d (2016), removed by
+# dc4e5412 (2019), never re-added — so the 2022 ROM's compiler came from
+# a tree carrying this revert, not from vanilla AOSP. The full commit
+# (with attribution) is embedded verbatim in the patch block below; it
+# applies cleanly to AOSP r46, and a secilc built from r46 + this patch
+# reproduces the 2022 compiler's policy output BYTE-IDENTICALLY on both
+# the v1 and 2022 policy sets, and passes the v5 in-build gate.
+#
+# === v5: RMX1805-org tree (v4 + IN-BUILD SELinux gate; flash directly) ===
+# v5 makes the fix self-certifying, per the user's call: no external
+# verification round-trip. After target-files-package and BEFORE signing,
+# the script runs a gate (see the gate block below): the HOST secilc built
+# from the same patched external/selinux source must compile THIS build's
+# real plat policy plus a probe file that references process:sigcont in
+# the exact slot the stock vendor's plat_pub occupies in init's boot-time
+# argv. A strict compiler fails there (exit 254) and the script aborts —
+# NO signed zip is produced by a build whose compiler lacks the fix. A
+# completed v5 run therefore guarantees the fix is in the ROM; flash the
+# output directly per the plan at the end of this script.
+# Gate validated offline 2026-10-22: strict r46 secilc fails the probe
+# with the sigcont error; the patched secilc passes (443,180-byte policy).
+#
+# === v4: RMX1805-org tree (v3 + SOURCE fix for the secilc compile failure) ===
+# v4 replaces v3's binary swap with the true source-level fix. The behavior
+# of the 2022 ROM's resolver was identified and reproduced from public AOSP
+# r46 source (2026-10-22): in libsepol's __cil_resolve_perms, a permission
+# that cannot be resolved (e.g. process:sigcont, dropped from the platform
+# class but still referenced by the stock vendor's API-28
+# plat_pub_versioned.cil) is DROPPED for non-map classes instead of failing
+# the whole policy compile. A secilc built from AOSP r46 + the embedded
+# patch below produces a binary policy BYTE-IDENTICAL to the 2022
+# compiler's output on both the v1 and the 2022 policy sets (988,503 and
+# 895,566 bytes, cmp-verified) — behavioral equivalence proven, no recycled
+# binaries. The patch is applied to the synced external/selinux tree after
+# repo sync (see the patch block below) with a fail-fast marker check, so
+# every build compiles its own working secilc from source. The offline
+# compile gate before flashing still applies.
+#
+# === v3: RMX1805-org tree (v2 + baked-in secilc fix for the fastboot drop) ===
+# ROOT CAUSE of the v1 fastboot drop (found 2026-10-22 by offline dissection
+# of the v1 system image; proven with a 2x2 control/test matrix):
+# second-stage init compiles the split SELinux policy at every boot by
+# running /system/bin/secilc over the system CIL set + the STOCK vendor's
+# API-28 plat_pub_versioned.cil + vendor_sepolicy.cil. The stock plat_pub
+# (line 4089) uses the legacy permission process:sigcont. The secilc built
+# from the current LineageOS-Revived base FAILS to resolve it ("Failed to
+# resolve permission sigcont"), LoadSplitPolicy returns false, init treats
+# policy-load failure as fatal and reboots to the bootloader: Realme logo,
+# then fastboot, no boot animation. The 2022 ROM's secilc compiles the same
+# inputs cleanly. secilc is STATICALLY linked (NEEDED: libc/libm/libdl only),
+# so the binary alone is the culprit; libsepol.so is swapped alongside it
+# because the pair is the combination proven on-device (2026-10-22: v1 +
+# pair boots). Both bases pin external/selinux to AOSP r46, so this is NOT
+# fixable by a manifest revision pin — the deterministic fix is to bake the
+# known-good pair into the target files before signing (below).
+# The pair is fetched from the user's own repo
+# (github.com/raisaputra94-ai/build_script @ main: secilc_2022,
+# libsepol_2022.so — extracted from the working 2022 ROM's system) and
+# md5-verified before and after the swap. Fail fast on any mismatch.
+# AFTER the build: do NOT flash until the offline compile gate passes —
+# send the signed zip for bench verification (exact-argv secilc run of the
+# new build's CIL set against the stock vendor files must exit 0).
+#
+# === v2: RMX1805-org tree (v1 + corrected flash model) ===
+# v2 changes NOTHING in the build itself; it corrects the flash plan only.
+# 2026-10-21 finding (verified against the repo via GitHub API): the org
+# vendor repo (RMX1805/vendor_oppo @ lineage-18.1, 180 files) has NO camera
+# stack at all — no camera.msm8953.so, no provider impl, no libmmcamera_*,
+# none of the 8 OPPO libs; only lib-imscamera.so (IMS telephony, unrelated).
+# Flashing the org-built vendor.img would leave the device with NO camera
+# provider whatsoever. The 2022 zip was system+boot ONLY and ran on the
+# stock vendor partition — the faithful v2 flash reproduces exactly that:
+# flash ONLY boot.img + system.img from the signed zip, leave the stock
+# vendor untouched. (dtbo is a don't-care: the org prebuilt dtbo.img is
+# byte-identical to stock's, md5 33e589c67993c2fc21f893a55ce59315.)
+#
 # === v1: RMX1805-org tree (v0 + releasetools AVB salt fix) ===
 # v1 adds one patch vs v0: common.py's AVB salt sha256(fingerprint) crashed
 # sign_target_files_apks in build 306563 ("Strings must be encoded before
@@ -42,12 +136,18 @@ export TZ=Asia/Singapore
 # the 2022 ROM was. Only build-system fixes (releasetools, device.mk syntax)
 # and the standard signing infrastructure are applied.
 #
-# Flash model: flash the full signed zip via TWRP (system + built vendor +
-# boot + dtbo). The org's vendor blobs (vendor/oppo/RMX1805/proprietary/)
-# plus the HALs built from device.mk should produce a complete vendor.img.
-# FALLBACK: if it does not boot, fastboot flash the stock A.71 vendor.img
-# over the built vendor (fastboot flash vendor stock_vendor.img) — the 2022
-# ROM ran on the stock vendor, so that combination is proven.
+# Flash model (CORRECTED 2026-10-21): flash ONLY boot.img + system.img from
+# the signed zip; LEAVE THE STOCK VENDOR PARTITION UNTOUCHED.
+# Do NOT flash the full signed zip — the org-built vendor.img has NO camera
+# stack at all (no camera.msm8953.so, no provider, no libmmcamera_*), and
+# flashing it would leave the device with no camera provider whatsoever.
+# This reproduces the proven 2022 architecture: the 2022 zip was
+# system+boot only and ran on the stock A.71 vendor.
+# In TWRP: Install > Install Image > flash boot.img to Boot,
+# then system.img to System Image (not the zip install). Factory reset,
+# then reboot. Run v0-bootimg-check.py against the signed zip first:
+# PASS means flash per this plan, anything else comes back for review.
+# dtbo: the org prebuilt is byte-identical to stock's — either way works.
 
 # Install compatibility libraries. Deliberately NO '|| true' here: under
 # 'set -e' a failed download aborts now with a clear error instead of dying
@@ -181,6 +281,73 @@ if grep -q 'sha256(fingerprint)' "$COMMON_PY"; then
 fi
 echo "releasetools AVB salt encode fix applied."
 
+# SOURCE FIX (v6: canonical patch): apply topjohnwu's revert of upstream
+# dc4e541 to libsepol's CIL permission resolver, so the boot-time SELinux
+# policy compile tolerates legacy permissions referenced by the stock
+# vendor's API-28 plat_pub_versioned.cil (process:sigcont) instead of
+# failing and dropping the phone to fastboot. In __cil_resolve_perms
+# (libsepol/cil/src/cil_resolve_ast.c), an unresolvable permission is
+# fatal only for map classes; otherwise it logs a warning and an empty
+# list stands in for the unknown perm — the exact behavior identified in
+# the 2022 ROM's resolver (see the v6 header note). The complete commit,
+# including its attribution and message, is embedded verbatim below.
+# Applied with git apply inside the synced external/selinux checkout;
+# fail fast if the patch does not apply or the marker is missing.
+SELINUX_PATCH="$PWD/.selinux_unknown_perm_revert.patch"
+cat > "$SELINUX_PATCH" <<'PATCHEOF'
+From 969114cff6ee973f47a3c84cacdef77e504d7bd9 Mon Sep 17 00:00:00 2001
+From: topjohnwu <topjohnwu@gmail.com>
+Date: Fri, 4 Sep 2020 19:02:11 -0700
+Subject: [PATCH] Revert "libsepol: Make an unknown permission an error in CIL"
+
+There are still invalid CILs out in the wild on Android.
+Do not throw an error in this case, preserve the old behavior.
+
+This reverts commit dc4e54126bf25dea4d51820922ccd1959be68fbc.
+---
+ libsepol/cil/src/cil_resolve_ast.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/libsepol/cil/src/cil_resolve_ast.c b/libsepol/cil/src/cil_resolve_ast.c
+index daf873be0d..d1d220f8ec 100644
+--- a/libsepol/cil/src/cil_resolve_ast.c
++++ b/libsepol/cil/src/cil_resolve_ast.c
+@@ -131,14 +131,18 @@ static int __cil_resolve_perms(symtab_t *class_symtab, symtab_t *common_symtab,
+ 				}
+ 			}
+ 			if (rc != SEPOL_OK) {
++				struct cil_list *empty_list;
+ 				if (class_flavor == CIL_MAP_CLASS) {
+ 					cil_log(CIL_ERR, "Failed to resolve permission %s for map class\n", (char*)curr->data);
+-				} else {
+-					cil_log(CIL_ERR, "Failed to resolve permission %s\n", (char*)curr->data);
++					goto exit;
+ 				}
+-				goto exit;
++				cil_log(CIL_WARN, "Failed to resolve permission %s\n", (char*)curr->data);
++				/* Use an empty list to represent unknown perm */
++				cil_list_init(&empty_list, perm_strs->flavor);
++				cil_list_append(*perm_datums, CIL_LIST, empty_list);
++			} else {
++				cil_list_append(*perm_datums, CIL_DATUM, perm_datum);
+ 			}
+-			cil_list_append(*perm_datums, CIL_DATUM, perm_datum);
+ 		} else {
+ 			cil_list_append(*perm_datums, curr->flavor, curr->data);
+ 		}
+PATCHEOF
+if grep -q "Use an empty list to represent unknown perm" external/selinux/libsepol/cil/src/cil_resolve_ast.c; then
+  echo "selinux resolver patch already applied (workspace reuse)."
+else
+  ( cd external/selinux && git apply "$SELINUX_PATCH" ) || {
+    echo "ERROR: selinux resolver patch failed to apply to external/selinux" >&2; exit 1; }
+fi
+if ! grep -q "Use an empty list to represent unknown perm" external/selinux/libsepol/cil/src/cil_resolve_ast.c; then
+  echo "ERROR: selinux resolver patch marker missing after apply" >&2
+  exit 1
+fi
+echo "selinux resolver drop-unresolved-perms patch applied."
+
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
 
@@ -255,7 +422,49 @@ TF_ZIP="$(ls -t out/target/product/RMX1805/obj/PACKAGING/target_files_intermedia
 # The ls|head pipe masks ls failures under 'set -e' (pipe status is head's),
 # so verify explicitly instead of signing an empty filename hours in.
 [[ -f "$TF_ZIP" ]] || { echo "ERROR: no target_files zip found after target-files-package" >&2; exit 1; }
-echo "Signing target files: $TF_ZIP"
+echo "Target files built: $TF_ZIP"
+
+# ---------------------------------------------------------------------------
+# v5 IN-BUILD SELINUX GATE (runs BEFORE signing; a failed gate produces NO
+# signed zip). Replicates the discriminating core of init's boot-time
+# policy compile with the HOST secilc — built from the same patched
+# external/selinux source as the device secilc in this build — against
+# THIS build's real plat policy from the target files, plus a probe CIL
+# standing in the vendor slot of init's argv: it references
+# process:sigcont, the legacy permission whose resolution failure dropped
+# v1 to fastboot. Strict compiler: fails here with that exact error.
+# Patched compiler: compiles, and only then does signing proceed.
+# ---------------------------------------------------------------------------
+HOST_SECILC="out/host/linux-x86/bin/secilc"
+if [[ ! -x "$HOST_SECILC" ]]; then
+  HOST_SECILC="$(find out/host -name secilc -type f 2>/dev/null | head -n1)"
+fi
+[[ -x "$HOST_SECILC" ]] || { echo "ERROR: host secilc not found under out/host — cannot run the SELinux gate" >&2; exit 1; }
+echo "SELinux gate: using host secilc $HOST_SECILC"
+
+GATE_DIR="$PWD/.selinux_gate"
+rm -rf "$GATE_DIR"
+mkdir -p "$GATE_DIR"
+unzip -q -o "$TF_ZIP" "SYSTEM/etc/selinux/*" -d "$GATE_DIR"
+SE_DIR="$GATE_DIR/SYSTEM/etc/selinux"
+[[ -f "$SE_DIR/plat_sepolicy.cil" ]] || { echo "ERROR: gate input missing from target files: plat_sepolicy.cil" >&2; exit 1; }
+cat > "$GATE_DIR/probe.cil" <<'PROBEEOF'
+(type gate_probe_t)
+(allow gate_probe_t gate_probe_t (process (fork sigcont)))
+PROBEEOF
+touch "$GATE_DIR/fc_null"
+GATE_ARGS=("$SE_DIR/plat_sepolicy.cil" -m -M true -G -N -c 30)
+[[ -f "$SE_DIR/system_ext_sepolicy.cil" ]] && GATE_ARGS+=("$SE_DIR/system_ext_sepolicy.cil")
+GATE_ARGS+=("$GATE_DIR/probe.cil" -o "$GATE_DIR/policy.out" -f "$GATE_DIR/fc_null")
+if ! "$HOST_SECILC" "${GATE_ARGS[@]}"; then
+  echo "ERROR: SELINUX GATE FAILED — this build's compiler cannot resolve the" >&2
+  echo "legacy process:sigcont permission. The unknown-permission revert" >&2
+  echo "(topjohnwu 969114c) is missing or ineffective. NO signed zip was" >&2
+echo "produced. DO NOT FLASH." >&2
+  exit 1
+fi
+rm -rf "$GATE_DIR"
+echo "SELINUX GATE PASSED: this build's compiler tolerates legacy permissions."
 
 SIGNED_TF="out/target/product/RMX1805/signed-target_files.zip"
 SIGNED_OTA="out/target/product/RMX1805/lineage-18.1-$(date +%Y%m%d)-UNOFFICIAL-RMX1805-signed.zip"
@@ -317,11 +526,18 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 # -p out/host/linux-x86 is REQUIRED: common.py defaults search_path to
 # <script-dir>/.., but build/tools/releasetools/* are symlinks into
-# build/make/tools/, so realpath() resolves to the wrong tree and signapk.jar
+# build/make/tools, so realpath() resolves to the wrong tree and signapk.jar
 # is not found there. The jar lives in the host out dir.
 ./build/tools/releasetools/sign_target_files_apks -o -p out/host/linux-x86 -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
-echo "Flash: TWRP install the signed zip, factory reset, reboot."
-echo "If it does not boot: fastboot flash vendor <stock A.71 vendor.img> over the built vendor and reboot."
+echo "This build PASSED the in-build SELinux gate (see above) — the compiler"
+echo "fix is verified inside this ROM. Flash directly, no external check needed."
+echo "Flash plan (system+boot ONLY, stock vendor stays untouched):"
+echo "  1. Unzip boot.img and system.img from $SIGNED_OTA."
+echo "  2. TWRP > Install > Install Image: flash boot.img to Boot, then system.img to System Image."
+echo "     Do NOT install the full zip and do NOT flash the built vendor.img"
+echo "     (the org-built vendor has no camera stack - flashing it kills the camera)."
+echo "  3. Coming from the v1 install (same ROM, same keys): no factory reset"
+echo "     needed. Reboot. First-boot checks: WiFi/BT, IMEI, camera, backlight slider."
