@@ -5,6 +5,72 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
+# === v14: RMX1805-org tree (v13 + "USB controlled by" section hidden) ===
+# v14 = v13 with ONE extension to the same Settings patch, at the
+# user's request (2026-10-23): the permanently-greyed "USB controlled
+# by" section of the USB Preferences page is now HIDDEN entirely on
+# this device. Mechanism: Settings hides a section when its
+# controller's isAvailable() returns false;
+# UsbDetailsDataRoleController.isAvailable() is
+# '!UsbBackend.isSingleDataRoleSupported()', and that backend method
+# (whose only caller is that check) now returns true when there is no
+# USB port at all — a port-less gadget is a fixed-role device, so
+# there is no role switcher to show. The embedded patch is now
+# settings_usb_preferences_fix.patch (2 file diffs:
+# UsbDetailsFunctionsController + UsbBackend) and the block below
+# fail-fast greps BOTH markers. Everything else is byte-identical to
+# v13: still PERMISSIVE, no harvest policy — the enforcing build is
+# renumbered to v15 (= this file + build-org-v12.sh's two SELinux
+# blocks, when the harvest freezes). v14 supersedes v13 as the
+# queue candidate.
+#
+# === v13: RMX1805-org tree (v11 + USB Preferences fix ONLY) ===
+# The user's call, 2026-10-23: ship the USB fix now; the ENFORCING
+# changes drafted in build-org-v12.sh are deliberately NOT in this
+# build because the SELinux denial harvest is not complete yet (the
+# calls / SMS / normal-reboot gates are still open). SELinux stays
+# PERMISSIVE here, exactly as in v10/v11 — the org cmdline flag is
+# untouched and no harvest policy is installed.
+#
+# v13 = v11 + ONE post-sync step: the Settings patch
+# (settings_usb_functions_norole.patch, embedded in the block below)
+# is applied to packages/apps/Settings with a fail-fast marker grep.
+# Root cause, proven 2026-10-23: the Android 10+ USB Preferences page
+# disables its "Use USB for" list unless the USB port reports
+# data-role DEVICE; this device has no android.hardware.usb HAL
+# anywhere (stock vendor carries none, the org tree ships none) and
+# the stock kernel's /sys/class/dual_role_usb/ is empty (both
+# verified on-device), so the list was greyed out forever — while
+# Developer Options > Default USB Configuration, a role-free path,
+# worked. The patch treats DATA_ROLE_NONE as DEVICE in that one
+# check. The identical block already exists in v12; it is reused
+# verbatim (renumbered) so both scripts behave the same.
+#
+# v13 also supersedes the unqueued v11: the density fix
+# (ro.sf.lcd_density=360 via system.prop) is included, so queueing
+# v13 gains density + USB in one build. When the harvest freezes,
+# the enforcing build returns as v14 = this file + v12's two
+# SELinux blocks (harvest policy install + cmdline permissive
+# removal), which are already written and sandbox-tested in
+# build-org-v12.sh. Everything else is byte-identical to v11.
+#
+# === v11: RMX1805-org tree (v10 + density fix: system.prop restored) ===
+# Build 306865 (v10) flashed and booted fine on 2026-10-23 — the
+# source-fixed SELinux compiler is confirmed on-device — but the
+# screen density was NOT 360. Root cause (proven from the pristine
+# v1 system.img, not the extracted tree): /system/build.prop in the
+# v1 build contains NO ro.sf.lcd_density at all, while the 2022 ROM's
+# build.prop has ro.sf.lcd_density=360. So in this build system
+# TARGET_SCREEN_DENSITY only drives the AAPT preferred config; it
+# never writes the property. The v10 move away from the system.prop
+# mechanism rested on that wrong premise. v11 restores the v8/v9
+# system.prop block verbatim (ro.sf.lcd_density=360 via
+# TARGET_SYSTEM_PROP — that file demonstrably lands in build.prop:
+# rild.libpath from the same file is build.prop line 68 in v1) and
+# KEEPS the BoardConfig sed (harmless; keeps the AAPT config at 360).
+# Everything else is byte-identical to v10. NOTE: the enforcing
+# build previously referred to as "v11" is renumbered to v12.
+#
 # === v10: RMX1805-org tree (v9 + density via BoardConfig TARGET_SCREEN_DENSITY) ===
 # v10 changes only HOW v8/v9 baked the display density: the system.prop
 # append is removed, and the script instead retargets BoardConfig.mk's
@@ -371,13 +437,13 @@ if ! grep -q "Use an empty list to represent unknown perm" external/selinux/libs
 fi
 echo "selinux resolver drop-unresolved-perms patch applied."
 
-# DISPLAY DENSITY (v10): the build's own knob. BoardConfig.mk already
-# sets TARGET_SCREEN_DENSITY := 384, which the build turns into
-# ro.sf.lcd_density (and uses for the aapt preferred config). Point it
-# at 360 (user preference; on this 720-wide panel = a 320dp-wide
-# layout). This REPLACES the v8/v9 system.prop append: setting the
-# property in both places would duplicate it in build.prop with the
-# winner decided by file order. Idempotent; fail fast if not set.
+# DISPLAY DENSITY (v10, comment corrected in v11): BoardConfig.mk
+# sets TARGET_SCREEN_DENSITY := 384. In this build system that knob
+# drives the AAPT preferred config ONLY — it does not emit
+# ro.sf.lcd_density (proven from the v1 system.img: the property is
+# absent from build.prop entirely). The sed stays in v11 (harmless,
+# keeps the asset bucket at 360); the property itself is set by the
+# system.prop block right below. Idempotent; fail fast if not set.
 BOARDCONFIG=device/oppo/RMX1805/BoardConfig.mk
 if grep -q '^TARGET_SCREEN_DENSITY := ' "$BOARDCONFIG"; then
   sed -i 's|^TARGET_SCREEN_DENSITY := .*|TARGET_SCREEN_DENSITY := 360|' "$BOARDCONFIG"
@@ -389,6 +455,25 @@ if ! grep -q '^TARGET_SCREEN_DENSITY := 360$' "$BOARDCONFIG"; then
   exit 1
 fi
 echo "display density set: TARGET_SCREEN_DENSITY := 360."
+
+# DISPLAY DENSITY (v11 fix, restoring the v8/v9 mechanism): bake
+# ro.sf.lcd_density=360 into the org device tree's system.prop so the
+# choice survives factory resets (the 'wm density 360' override does
+# not). The org tree wires its system.prop via TARGET_SYSTEM_PROP
+# (BoardConfig.mk) and sets no lcd_density of its own. On this 720-wide
+# panel, density 360 gives a 320dp-wide layout. Idempotent: replace an
+# existing value, append when absent, then verify.
+SYSPROP=device/oppo/RMX1805/system.prop
+if grep -q '^ro.sf.lcd_density=' "$SYSPROP"; then
+  sed -i 's|^ro.sf.lcd_density=.*|ro.sf.lcd_density=360|' "$SYSPROP"
+else
+  echo 'ro.sf.lcd_density=360' >> "$SYSPROP"
+fi
+if ! grep -q '^ro.sf.lcd_density=360$' "$SYSPROP"; then
+  echo "ERROR: ro.sf.lcd_density=360 missing in $SYSPROP after patch" >&2
+  exit 1
+fi
+echo "display density baked: ro.sf.lcd_density=360."
 
 # DEVICE INIT (v9): replace init/init_msm8953.cpp with the corrected
 # version embedded below. Two changes vs the org tree: (1) the Pixel 4 XL
@@ -540,6 +625,77 @@ fi
 grep -q "3072 tier" "$INIT_CPP" || {
   echo "ERROR: 3072 heap tier missing in $INIT_CPP" >&2; exit 1; }
 echo "device init replaced: original fingerprint kept, 3072 heap tier added."
+
+# USB PREFERENCES FIX (v14): apply the embedded Settings patch so the
+# "Use USB for" list is not permanently greyed out on this HAL-less
+# device and the unusable "USB controlled by" section is hidden
+# (see the v14/v13 header notes for the full root cause). Applied
+# with git apply inside the synced packages/apps/Settings checkout;
+# fail fast if the patch does not apply or either marker is missing.
+USB_PATCH="$PWD/.settings_usb_preferences_fix.patch"
+cat > "$USB_PATCH" <<'USBPATCHEOF'
+diff --git a/src/com/android/settings/connecteddevice/usb/UsbBackend.java b/src/com/android/settings/connecteddevice/usb/UsbBackend.java
+index a8018a1..7d9679a 100644
+--- a/src/com/android/settings/connecteddevice/usb/UsbBackend.java
++++ b/src/com/android/settings/connecteddevice/usb/UsbBackend.java
+@@ -163,7 +163,13 @@ public class UsbBackend {
+     }
+ 
+     public boolean isSingleDataRoleSupported() {
+-        return mPort != null && mPortStatus != null
++        // Devices without a USB HAL have no port whose role could be
++        // switched; treat them as fixed-role so the "USB controlled by"
++        // section is hidden instead of shown permanently disabled.
++        if (mPort == null) {
++            return true;
++        }
++        return mPortStatus != null
+                 && ((!mPortStatus
+                 .isRoleCombinationSupported(POWER_ROLE_SINK, DATA_ROLE_HOST)
+                 && !mPortStatus
+diff --git a/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java b/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
+index 99e9d50..260956e 100644
+--- a/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
++++ b/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
+@@ -17,6 +17,7 @@
+ package com.android.settings.connecteddevice.usb;
+ 
+ import static android.hardware.usb.UsbPortStatus.DATA_ROLE_DEVICE;
++import static android.hardware.usb.UsbPortStatus.DATA_ROLE_NONE;
+ import static android.net.ConnectivityManager.TETHERING_USB;
+ 
+ import android.content.Context;
+@@ -96,7 +97,10 @@ public class UsbDetailsFunctionsController extends UsbDetailsController
+             Log.d(TAG, "refresh() connected : " + connected + ", functions : " + functions
+                     + ", powerRole : " + powerRole + ", dataRole : " + dataRole);
+         }
+-        if (!connected || dataRole != DATA_ROLE_DEVICE) {
++        // Legacy gadgets without a USB HAL never report a port, so their data
++        // role is always DATA_ROLE_NONE even while connected as a device.
++        // Don't keep the function list disabled for them.
++        if (!connected || (dataRole != DATA_ROLE_DEVICE && dataRole != DATA_ROLE_NONE)) {
+             mProfilesContainer.setEnabled(false);
+         } else {
+             // Functions are only available in device mode
+USBPATCHEOF
+USB_JAVA=packages/apps/Settings/src/com/android/settings/connecteddevice/usb/UsbDetailsFunctionsController.java
+USB_BACKEND=packages/apps/Settings/src/com/android/settings/connecteddevice/usb/UsbBackend.java
+if grep -q 'dataRole != DATA_ROLE_NONE' "$USB_JAVA" && grep -q 'no port whose role could be' "$USB_BACKEND"; then
+  echo "Settings USB Preferences patch already applied (workspace reuse)."
+else
+  ( cd packages/apps/Settings && git apply "$USB_PATCH" ) || {
+    echo "ERROR: Settings USB Preferences patch failed to apply" >&2; exit 1; }
+fi
+if ! grep -q 'dataRole != DATA_ROLE_NONE' "$USB_JAVA"; then
+  echo "ERROR: Settings USB functions marker missing after apply" >&2
+  exit 1
+fi
+if ! grep -q 'no port whose role could be' "$USB_BACKEND"; then
+  echo "ERROR: Settings USB controlled-by-hide marker missing after apply" >&2
+  exit 1
+fi
+echo "Settings USB Preferences patch applied (function list works; 'controlled by' hidden)."
+
 
 # Fresh output for this device so no stale artifacts are reused.
 rm -rf out/target/product/RMX1805
@@ -733,4 +889,5 @@ echo "  2. TWRP > Install > Install Image: flash boot.img to Boot, then system.i
 echo "     Do NOT install the full zip and do NOT flash the built vendor.img"
 echo "     (the org-built vendor has no camera stack - flashing it kills the camera)."
 echo "  3. Coming from the v1 install (same ROM, same keys): no factory reset"
-echo "     needed. Reboot. First-boot checks: WiFi/BT, IMEI, camera, backlight slider."
+echo "     needed. Reboot. First-boot checks: WiFi/BT, IMEI, camera, backlight slider,"
+ echo "     display density 360, USB Preferences: list selectable, controlled-by hidden."
