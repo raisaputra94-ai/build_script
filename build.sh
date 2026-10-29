@@ -1264,7 +1264,7 @@ source build/envsetup.sh
 
 # Build as userdebug (adb root for testing; the 2022 ROM was user, but
 # userdebug is strictly more useful for bring-up and costs nothing here).
-lunch lineage_RMX1805-userdebug
+lunch lineage_RMX1805-user
 # v16 EARLY POLICY PRE-CHECK: compile only the policy modules (minutes).
 # An unknown type / bad macro in the harvest or wiring dies here, not after
 # the multi-hour image build. 'sepolicy' is the monolithic all-policy build.
