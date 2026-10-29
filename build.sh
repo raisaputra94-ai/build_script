@@ -1,3 +1,131 @@
+# === build-org-v21-lowram-audiofx-dpmd: RMX1805-org tree (v19 + dpmd fix) ===
+# v21 = build-org-v19-lowram-audiofx verbatim PLUS the dpmd fix below, nothing
+# else changed: low-RAM props, <=2048MiB heap tier, zram-by-default, AudioFX
+# kept, RealmeParts kept, USB fix, density 360, secilc fix, signing and gate
+# are exactly v19's. build-org-v19-lowram-audiofx.sh itself is untouched.
+# QUEUE THIS FILE, NOT v19, if the dpmd fix is wanted. NOTE: v20 is the
+# withdrawn noparts file, so this is v21 to avoid a filename collision.
+# User call 2026-10-29 ("just fix it already"): add the dpmd socket rules
+# WITHOUT waiting for a mobile-data functional test (no SIM credit, so the
+# data test is blocked until top-up). This is added by user call, NOT by
+# harvest functional proof -- the data test after top-up is still recommended
+# as validation, but it is not a queue blocker per that call.
+# Changes, both in enforcing_harvest.te only, allow count 27 -> 28:
+#  (1) allow init self:netlink_route_socket { read } ->
+#      { bind create nlmsg_read read write } (comm dpmd at boot, logs-2).
+#  (2) NEW allow init socket_device:sock_file { create setattr };
+#      (init creating the dpmd socket file at boot, name=dpmd).
+# NOT added: init diag_device:chr_file { ioctl write } for /dev/diag
+# (comm dpmd) -- diag_device is vendor-only (declared in stock vendor
+# diag.te, absent from plat_sepolicy.cil and plat_pub_versioned.cil), so it
+# cannot be expressed plat-side, same parked class as ipacm-diag and
+# netutils_wrapper diag. It stays parked; see the parked list below.
+# NOT added: init netlink_socket / rawip_socket -- comm not verified as
+# dpmd, left out rather than expanding init further on unverified data.
+# Bench gate before flashing still applies exactly as in v19.
+#
+# === build-org-v19-lowram-audiofx: RMX1805-org tree (v18-lowram + AudioFX kept) ===
+# v19-lowram-audiofx = build-org-v18-lowram verbatim PLUS ONE marked
+# post-sync section (">>> V19 AUDIOFX SECTION >>>", inserted after the
+# V17 LOW-RAM SECTION, before the SELINUX section) and one extra
+# first-boot check line in the final echo. Nothing else changed:
+# low-RAM props, <=2048MiB heap tier, zram-by-default, enforcing 27
+# rules, USB fix, density 360, secilc fix, signing and gate are
+# exactly v18-lowram's. build-org-v18-lowram.sh itself is untouched.
+# QUEUE THIS FILE, NOT v18-lowram, if AudioFX is wanted.
+# User call 2026-10-28: exclude AudioFX from removed_packages.
+# The org tree ships device/oppo/RMX1805/remove_packages/Android.mk
+# with LOCAL_OVERRIDES_PACKAGES := AudioFX, and device.mk includes
+# the RemovePackages module, so AudioFX is NOT installed in v14-v18
+# builds. This section removes AudioFX from that override list only.
+# It does NOT add AudioFX to PRODUCT_PACKAGES: if the Lineage base
+# does not include AudioFX on its own, this change alone will not
+# install it, and the first-boot check below will tell. Do not bundle
+# an explicit AudioFX package add into this version without that
+# evidence, because the mandate here is exactly "exclude from
+# removed_packages".
+#
+# === build-org-v18-lowram: RMX1805-org tree (v17-lowram + set_zram starts by default) ===
+# v18-lowram = build-org-v17-lowram verbatim PLUS a change inside the
+# V17 LOW-RAM SECTION's zram block only, plus this header. Nothing else
+# changed: low-RAM props, <=2048MiB heap tier, enforcing 27 rules, USB
+# fix, density, secilc fix, signing and gate are exactly v17-lowram's.
+# build-org-v17-lowram.sh itself is untouched. QUEUE THIS FILE, NOT
+# v17-lowram, if the low-RAM build is wanted.
+# User call 2026-10-28 (after v17-lowram): "start it by default". That
+# means the set_zram service must start with its class, not only on the
+# boot_completed trigger. The org tree ships it as:
+#   service set_zram /vendor/bin/sh /system/etc/init/set_zram.sh
+#       class late_start
+#       disabled
+#       user root / group system / oneshot
+#   on property:sys.boot_completed=1
+#       start set_zram
+# "disabled" overrides class-based starting, so the service only ran on
+# boot_completed -- after the framework is up. Removing "disabled" from
+# the set_zram block ONLY (ktweak keeps its disabled) makes init start
+# it with the late_start class, which runs after /data is decrypted and
+# the main services are up, but before boot_completed. The boot_completed
+# "start set_zram" line is KEPT as a second run: the script is designed
+# to be re-run (swapoff + reset first), so a late_start run that hit a
+# not-yet-ready zram node is corrected at boot_completed, and a
+# successful late_start run is simply re-initialised while almost
+# nothing is swapped yet. Fail-fast: exactly one "disabled" removed,
+# from set_zram only; ktweak still disabled; service definition, class,
+# boot_completed trigger, Android.mk install rule and script contents
+# all still verified.
+#
+# === build-org-v17-lowram: RMX1805-org tree (v16 + low-RAM optimisation, NO Go) ===
+# v17-lowram = build-org-v16 verbatim PLUS ONE marked post-sync section
+# (">>> V17 LOW-RAM SECTION >>>", inserted after DEVICE INIT, before the
+# SELINUX section) and one extra first-boot check line in the final echo.
+# Nothing else changed: enforcing 27 rules, USB fix, density 360, secilc
+# source fix, signing and gate are exactly v16's. build-org-v16.sh itself
+# is untouched. QUEUE THIS FILE, NOT v16, if the low-RAM build is wanted;
+# v16 remains the non-low-RAM enforcing candidate.
+# User call 2026-10-28: optimise for a low-RAM device, explicitly WITHOUT
+# Go packages or a Go launcher. So this does NOT inherit go_defaults and
+# adds NO Go packages, NO Launcher3QuickStepGo, NO GMS Go set, NO flattened
+# APEX. What it does, in the new section:
+#  (1) system.prop (via TARGET_SYSTEM_PROP, the proven density mechanism):
+#      ro.config.low_ram=true (the framework low-RAM switch),
+#      persist.sys.purgeable_assets=1, and all four dex2oat thread counts
+#      the org tree sets to 8 -> 4 (ro.sys.fw.dex2oat_thread_count,
+#      boot-dex2oat-threads, dex2oat-threads, image-dex2oat-threads).
+#      Existing keys are replaced in place, never appended as duplicates
+#      (a duplicate in build.prop would not reliably win).
+#  (2) Dalvik heap for the <=2048MiB tier ONLY, in init_msm8953.cpp as
+#      written by the DEVICE INIT section: heapgrowthlimit 192m -> 128m,
+#      heapsize 512m -> 256m (the Go heap caps, taken without the Go
+#      packages). The 3072/4096/6144 tiers are asserted unchanged. Heap
+#      is set by init at boot and overrides build.prop, so editing
+#      system.prop alone would NOT have done this; the org system.prop's
+#      dalvik.vm.heapsize=36m line is likewise overridden by init.
+#      On a 3GB unit this tier never triggers, but ro.config.low_ram
+#      still applies system-wide -- this build is aimed at the 2GB unit.
+#  (3) ZRAM: the org tree ALREADY defines the service the user asked to
+#      enable, in rootdir/etc/init.qcom.rc:
+#        service set_zram /vendor/bin/sh /system/etc/init/set_zram.sh
+#      with class late_start, and "start set_zram" on
+#      property:sys.boot_completed=1. The "disabled" keyword in the
+#      service block does NOT mean off -- it means "do not start with
+#      the class, start only on that explicit trigger", the same pattern
+#      as the ktweak service right below it. The new section therefore
+#      does NOT remove "disabled" (that would change zram start timing
+#      for no tested reason); instead it FAILS THE BUILD if the service
+#      definition, its boot_completed trigger, its Android.mk install
+#      rule to /system/etc/init, or the script's lz4 / 50%-of-RAM
+#      disksize / mkswap / swapon / swappiness=100 contents are missing.
+#      That is the enable guarantee: a v17-lowram zip cannot ship with
+#      zram silently absent.
+# NOT in this ROM script (they live elsewhere, unchanged):
+#  - kernel LMK table (aggressive 72/90/108/126/216/315 MB), KSM off,
+#    kernel swappiness default: kernel workflow line, not this script.
+#    The ROM still writes swappiness=100 at boot via set_zram.sh itself.
+#  - No change to the permissive/enforcing state: v16's enforcing
+#    cmdline removal and 27-rule harvest stand; bench gate before
+#    flashing still applies exactly as in v16.
+#
 #!/bin/bash
 set -e
 
@@ -5,6 +133,82 @@ export BUILD_HOSTNAME=android-build
 export BUILD_USERNAME=RMX1805
 export TZ=Asia/Singapore
 
+# === v16: RMX1805-org tree (v15 review fixes: enforcing, NO qcom baseline, 27-rule harvest) ===
+# v16 = v15 after a source-level review (2026-10-24) against lineage-18.1
+# system/sepolicy, device/qcom/sepolicy and device/lineage/sepolicy. Three
+# findings, each of which would have failed the v15 build at the policy
+# compile step (hours in), so v16 fixes them and adds an early fail-fast:
+# (1) BASELINE WIRING REMOVED. In Android 11 BOARD_PLAT_*_SEPOLICY_DIR is
+#     compiled into system_ext_sepolicy.cil, and PRODUCT_*_SEPOLICY_DIRS
+#     into product_sepolicy.cil, each against AOSP plat public/private
+#     only (no system/sepolicy/vendor, no BOARD_VENDOR dirs). The baseline's
+#     generic/ scope references types declared ONLY under qva/ (which v15
+#     excluded): vendor_dpmservice (generic/private/dataservice_app.te),
+#     vendor_vps_service + vendor_perf_service (generic/product/private/
+#     systemhelper_app.te) -> unknown type, checkpolicy error. Pulling qva
+#     in instead would add unharvested domains (userdebug qti-testscripts,
+#     vendor_dataservice_app seapp re-domaining) AFTER the denial harvest
+#     was taken without any baseline, and the stock Android 9 vendor uses
+#     none of the vendor_* names it defines. v1-v14 (all baseline-less)
+#     booted, and the harvest was taken on that exact policy, so enforcing
+#     ships that same configuration. The dangling device/qcom/sepolicy/
+#     private|public lines stay as-is (nonexistent dirs, ignored).
+# (2) HARVEST 30 -> 27 RULES. Same compile scope means a rule may only name
+#     types visible to plat public/private + the org dirs:
+#       qti_init_shell                  (declared only in sepolicy-legacy-um
+#                                        legacy/vendor/common/init_shell.te)
+#       sysfs_mmc_host                  (declared nowhere in the 18.1 trees)
+#       hal_graphics_composer_default   (system/sepolicy/vendor/ only)
+#     -> the 2 qti_init_shell rules and the 1 vold/sysfs_mmc_host rule are
+#     PARKED (accept the denial); the 2 surfaceflinger rules now use the
+#     public attribute hal_graphics_composer_server (same method as the
+#     other HAL rules). Every other type in the 27 was machine-checked as
+#     declared (type/attribute/prop-macro/hal_attribute expansion).
+# (3) EARLY POLICY PRE-CHECK: right after lunch, build only plat_sepolicy.cil,
+#     system_ext_sepolicy.cil, product_sepolicy.cil and sepolicy (minutes) so
+#     an unknown type fails before the multi-hour build, not after.
+# Everything else is byte-identical to v15 (cmdline permissive flag removed,
+# SELINUX_IGNORE_NEVERALLOWS := true kept, density, USB fix, gate, signing).
+# BENCH GATE STILL REQUIRED before flashing: the in-build gate proves the
+# compiler tolerates process:sigcont but does NOT compile against the STOCK
+# vendor CIL; run the exact-argv secilc bench compile on the signed zip.
+#
+# === v15: RMX1805-org tree (v14 + QCOM baseline wiring + ENFORCING) ===
+# v15 is the enforcing build, cut 2026-10-24 at the user's call. It
+# adds THREE post-sync steps to v14 (one marked section, inserted
+# after the device-init replacement); everything else is
+# byte-identical to v14 (SELinux compiler patch + in-build gate,
+# density 360, device init, USB Preferences fix):
+# (1) QCOM SEPOLICY BASELINE WIRING: the org BoardConfig points
+#     BOARD_PLAT_*_SEPOLICY_DIR at device/qcom/sepolicy/private and
+#     device/qcom/sepolicy/public -- paths that do not exist in the
+#     lineage-18.1 android_device_qcom_sepolicy repo (restructured
+#     into generic/, qva/, legacy/), so v1-v14 all compiled the
+#     platform policy with NO Qualcomm baseline. Rewire to the
+#     baseline's own SEPolicy.mk plat/product lines, generic scope
+#     only: qva is for QVA chipsets (not msm8953); legacy/vendor and
+#     the legacy-um include stay out (vendor-side duplicates of the
+#     stock vendor policy's types). Same change as
+#     device_tree_selinux_qcom_baseline.patch.
+# (2) HARVEST POLICY: installs sepolicy/private/enforcing_harvest.te
+#     (batches 1-4 of the on-device permissive denial harvest,
+#     exactly 27 allow statements, fail-fast counted), system-side
+#     only -- the stock vendor policy is never touched.
+# (3) ENFORCING MODE: deletes the cmdline line
+#     'BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive'.
+#     SELINUX_IGNORE_NEVERALLOWS stays := true on purpose (first
+#     enforcing attempt; removing it is the later hardening pass).
+# STATE AT CUT TIME: the batch-5 freeze round (voice calls in/out,
+# SMS send/receive, one normal-reboot denial dump, bundled WiFi
+# tombstone pull) has NOT been run yet. Telephony showed zero
+# denials across batches 1-4, and every parked item was verified
+# 2026-10-24 against the extracted stock policy set: stock ships
+# enforcing and denies them all too. If batch 5 surfaces new rules
+# they land in a v16; v15's policy is batches 1-4 + baselines.
+# FLASH MODEL (unchanged): boot.img + system.img ONLY, stock vendor
+# untouched, no factory reset. Keep the v14 (permissive) boot.img
+# aside before flashing -- it is the TWRP escape hatch.
+#
 # === v14: RMX1805-org tree (v13 + "USB controlled by" section hidden) ===
 # v14 = v13 with ONE extension to the same Settings patch, at the
 # user's request (2026-10-23): the permanently-greyed "USB controlled
@@ -626,6 +830,355 @@ grep -q "3072 tier" "$INIT_CPP" || {
   echo "ERROR: 3072 heap tier missing in $INIT_CPP" >&2; exit 1; }
 echo "device init replaced: original fingerprint kept, 3072 heap tier added."
 
+# >>> V17 LOW-RAM SECTION >>>
+# Low-RAM optimisation, NO Go packages/launcher (see v17-lowram header).
+# The system.prop part is idempotent (existing keys replaced in place,
+# absent keys appended, then every key verified). The heap edit is NOT
+# meant to be rerun on an already-edited cpp: it assumes the DEVICE INIT
+# section just rewrote the cpp fresh (as it does on every run, trees are
+# re-synced), so it asserts the original 192m/512m values before editing.
+# The heap edit is Python, targeted at the <=2048MiB tier only, with
+# counts that prove the other tiers were not touched.
+for PROP in 'ro.config.low_ram=true' 'persist.sys.purgeable_assets=1' \
+    'ro.sys.fw.dex2oat_thread_count=4' 'dalvik.vm.boot-dex2oat-threads=4' \
+    'dalvik.vm.dex2oat-threads=4' 'dalvik.vm.image-dex2oat-threads=4'; do
+  KEY="${PROP%%=*}"
+  if grep -q "^${KEY}=" "$SYSPROP"; then
+    sed -i "s|^${KEY}=.*|${PROP}|" "$SYSPROP"
+  else
+    echo "$PROP" >> "$SYSPROP"
+  fi
+  grep -q "^${PROP}$" "$SYSPROP" || {
+    echo "ERROR: $PROP missing in $SYSPROP after low-RAM patch" >&2; exit 1; }
+  [ "$(grep -c "^${KEY}=" "$SYSPROP")" = "1" ] || {
+    echo "ERROR: duplicate $KEY in $SYSPROP after low-RAM patch" >&2; exit 1; }
+done
+echo "low-RAM props baked: low_ram=true, purgeable_assets=1, dex2oat threads 8->4."
+
+python3 - "$INIT_CPP" <<'PYEOF'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+marker = "// from - phone-xhdpi-2048-dalvik-heap.mk"
+head, sep, tail = text.partition(marker)
+assert sep, "2048 heap tier marker missing in init cpp"
+assert tail.count('heapgrowthlimit = "192m"') == 1, "2048 tier growthlimit not exactly once"
+assert tail.count('heapsize = "512m"') == 1, "2048 tier heapsize not exactly once"
+tail = tail.replace('heapgrowthlimit = "192m"', 'heapgrowthlimit = "128m"')
+tail = tail.replace('heapsize = "512m"', 'heapsize = "256m"')
+# Other tiers must still carry their original caps.
+assert head.count('heapgrowthlimit = "192m"') == 2, "4096/3072 tiers growthlimit changed"
+assert head.count('heapsize = "512m"') == 3, "4096/3072/6144 tiers heapsize changed"
+open(path, "w").write(head + sep + tail)
+PYEOF
+grep -q 'heapgrowthlimit = "128m"' "$INIT_CPP" || {
+  echo "ERROR: 2048-tier heapgrowthlimit not 128m in $INIT_CPP" >&2; exit 1; }
+grep -q 'heapsize = "256m"' "$INIT_CPP" || {
+  echo "ERROR: 2048-tier heapsize not 256m in $INIT_CPP" >&2; exit 1; }
+[ "$(grep -c 'heapgrowthlimit = "192m"' "$INIT_CPP")" = "2" ] || {
+  echo "ERROR: heapgrowthlimit 192m count changed outside 2048 tier" >&2; exit 1; }
+[ "$(grep -c 'heapsize = "512m"' "$INIT_CPP")" = "3" ] || {
+  echo "ERROR: heapsize 512m count changed outside 2048 tier" >&2; exit 1; }
+echo "low-RAM heap: <=2048MiB tier now 128m growth / 256m max; other tiers unchanged."
+
+ZRAM_RC=device/oppo/RMX1805/rootdir/etc/init.qcom.rc
+ZRAM_SH=device/oppo/RMX1805/rootdir/etc/set_zram.sh
+ZRAM_MK=device/oppo/RMX1805/rootdir/Android.mk
+# ZRAM STARTS BY DEFAULT (v18-lowram, user call 2026-10-28): remove
+# "disabled" from the set_zram block ONLY, so init starts it with its
+# late_start class. ktweak keeps its disabled. The boot_completed
+# "start set_zram" line is kept as a re-run safety net (see v18 header).
+python3 - "$ZRAM_RC" <<'PYEOF'
+import sys
+path = sys.argv[1]
+lines = open(path).read().splitlines(keepends=True)
+out = []
+in_zram = False
+removed = 0
+for line in lines:
+    if line.startswith("service set_zram "):
+        in_zram = True
+    elif line.startswith("service ") or line.startswith("on "):
+        in_zram = False
+    if in_zram and line.strip() == "disabled":
+        removed += 1
+        continue
+    out.append(line)
+assert removed == 1, f"expected exactly one disabled removed from set_zram, got {removed}"
+text = "".join(out)
+assert "service ktweak " in text
+kt = text.split("service ktweak ", 1)[1].split("\n\n", 1)[0]
+assert "disabled" in kt, "ktweak disabled was changed, must stay"
+open(path, "w").write(text)
+PYEOF
+if grep -A6 '^service set_zram ' "$ZRAM_RC" | grep -q 'disabled'; then
+  echo "ERROR: disabled still present in set_zram block in $ZRAM_RC" >&2; exit 1
+fi
+grep -q '^service set_zram /vendor/bin/sh /system/etc/init/set_zram.sh$' "$ZRAM_RC" || {
+  echo "ERROR: set_zram service definition missing in $ZRAM_RC" >&2; exit 1; }
+grep -q 'class late_start' "$ZRAM_RC" || {
+  echo "ERROR: set_zram class late_start missing in $ZRAM_RC" >&2; exit 1; }
+grep -q '^    start set_zram$' "$ZRAM_RC" || {
+  echo "ERROR: set_zram boot_completed re-run missing in $ZRAM_RC" >&2; exit 1; }
+grep -q 'LOCAL_MODULE       := set_zram.sh' "$ZRAM_MK" || {
+  echo "ERROR: set_zram.sh install rule missing in $ZRAM_MK" >&2; exit 1; }
+for Z in "comp_algorithm" "disksize" "mkswap" "swapon" "swappiness"; do
+  grep -q "$Z" "$ZRAM_SH" || {
+    echo "ERROR: set_zram.sh missing $Z" >&2; exit 1; }
+done
+grep -q "echo 'lz4'" "$ZRAM_SH" || {
+  echo "ERROR: set_zram.sh not using lz4" >&2; exit 1; }
+grep -q 'echo 100 > /proc/sys/vm/swappiness' "$ZRAM_SH" || {
+  echo "ERROR: set_zram.sh not setting swappiness=100" >&2; exit 1; }
+echo "zram starts by default: disabled removed from set_zram (late_start), boot_completed re-run kept."
+# <<< V17 LOW-RAM SECTION <<<
+
+# >>> V19 AUDIOFX SECTION >>>
+# Keep AudioFX: remove it from the org tree's RemovePackages override
+# list (user call 2026-10-28). The org tree's remove_packages/Android.mk
+# is the ONLY place AudioFX is removed: device.mk includes RemovePackages,
+# and that module's LOCAL_OVERRIDES_PACKAGES := AudioFX is what keeps
+# AudioFX out of the build. This section deletes exactly that one line
+# and leaves the RemovePackages module and its mechanism intact (so any
+# future overrides in that file still apply). Fail fast if the line is
+# not exactly as expected, so a moved/changed tree cannot silently
+# ship with AudioFX still removed.
+AUDIOFX_MK=device/oppo/RMX1805/remove_packages/Android.mk
+[ -f "$AUDIOFX_MK" ] || {
+  echo "ERROR: $AUDIOFX_MK not found (synced tree?)" >&2; exit 1; }
+grep -q '^LOCAL_OVERRIDES_PACKAGES := AudioFX$' "$AUDIOFX_MK" || {
+  echo "ERROR: AudioFX override line not exactly as expected in $AUDIOFX_MK" >&2; exit 1; }
+sed -i '/^LOCAL_OVERRIDES_PACKAGES := AudioFX$/d' "$AUDIOFX_MK"
+# Post-checks: AudioFX must be gone from this file, module intact.
+if grep -q 'AudioFX' "$AUDIOFX_MK"; then
+  echo "ERROR: AudioFX still present in $AUDIOFX_MK after edit" >&2; exit 1
+fi
+grep -q '^LOCAL_MODULE := RemovePackages$' "$AUDIOFX_MK" || {
+  echo "ERROR: RemovePackages module definition lost in $AUDIOFX_MK" >&2; exit 1; }
+grep -q 'RemovePackages' device/oppo/RMX1805/device.mk || {
+  echo "ERROR: RemovePackages missing from device.mk (mechanism changed?)" >&2; exit 1; }
+echo "AudioFX kept: removed from RemovePackages override list (module intact)."
+# <<< V19 AUDIOFX SECTION <<<
+
+# >>> V15 SELINUX SECTION >>>
+# QCOM SEPOLICY BASELINE (v16): intentionally NOT wired (see v16 header,
+# finding 1). BOARDCONFIG is still needed below for the cmdline edit.
+BOARDCONFIG=device/oppo/RMX1805/BoardConfig.mk
+for L in 'device/qcom/sepolicy/generic' 'device/qcom/sepolicy/qva' 'device/qcom/sepolicy-legacy-um'; do
+  if grep -q "$L" "$BOARDCONFIG"; then
+    echo "ERROR: unexpected qcom sepolicy wiring ($L) in $BOARDCONFIG" >&2; exit 1
+  fi
+done
+echo "qcom sepolicy baseline: not wired (as harvested)."
+
+# ENFORCING POLICY (v15): install the denial-harvest policy into the
+# org device tree's plat-private sepolicy dir (BoardConfig.mk wires
+# sepolicy/private via BOARD_PLAT_PRIVATE_SEPOLICY_DIR). Content is
+# the consolidated batches 1-4 draft (27 allow statements after v16 review) verbatim, plus the v21 dpmd fix (28 total),
+# preceded by a shipped-as header. Fail fast if the written file
+# does not carry exactly 28 allow statements.
+HARVEST_TE=device/oppo/RMX1805/sepolicy/private/enforcing_harvest.te
+cat > "$HARVEST_TE" <<'HARVESTHDR'
+# RMX1805 enforcing harvest -- SHIPPED in build-org-v16 (2026-10-24).
+# Frozen at batches 1-4 (27 allow statements after v16 review). Batch-5 round (voice
+# calls / SMS / normal-reboot dump) still pending at ship time; zero
+# telephony denials in batches 1-4. Source: enforcing_batch1234_draft.te
+HARVESTHDR
+cat >> "$HARVEST_TE" <<'HARVESTEOF'
+# RMX1805 org + stock vendor — SELinux enforcing draft (DRAFT)
+# Batches 1+2+3+4 consolidated. Supersedes enforcing_batch123_draft.te.
+# Sources: permissive denial harvests, 2026-10-22 — batch 1: fresh-flash
+# boot + idle; batch 2: Settings browsing, Aperture, GMS; batch 3:
+# extended session (Jelly browsing, MediaProvider scan, one WiFi HAL
+# crash/restart); batch 4: WiFi hotspot on / client connected / off
+# (no new rules, one new parked item — hal_wifi_hostapd, see below).
+# Remaining unconfirmed surface: voice calls (in + out) and SMS
+# (send + receive) — zero telephony denials across all batches, so
+# clean-vs-untested is still open — plus one normal-reboot dump.
+# Fingerprint is N/A: user confirmed this unit has no sensor.
+# Coverage now: boot, idle, Settings, camera, GMS, browsing, hotspot.
+# Target location: device/oppo/RMX1805/sepolicy/private/ (plat-private).
+#
+# Method note: rules may only reference types/attributes visible to the
+# PLAT build. Vendor-only types (declared in the stock vendor_sepolicy.cil,
+# absent from plat and from plat_pub_versioned.cil) are reached through
+# their PUBLIC attribute memberships instead:
+#   hal_light_default_exec -> vendor_file_type
+#   hal_wifi_default       -> hal_wifi_server (attribute)
+#   hal_camera_default     -> hal_camera_server (attribute)
+#   hal_audio_default      -> hal_audio_server (attribute)
+#   hal_memtrack_default   -> hal_memtrack_server (attribute)
+#   silead_fpd_device      -> dev_type
+# SELINUX_IGNORE_NEVERALLOWS is still := true in the org BoardConfig;
+# rules flagged [neverallow?] need re-checking at final hardening.
+
+# ================= batch 1: boot + idle =================
+
+# --- init mount setup (first/second stage mount_all) ---
+allow init vendor_file_type:file mounton;
+allow init oemfs:dir mounton;
+
+# --- fsck on the persist block device (e2fsck, mmcblk0p5) ---
+allow fsck block_device:blk_file { read write open ioctl };
+
+# --- toolbox (chattr) on /data/media during init scripts ---
+allow toolbox rootfs:dir { read open };
+
+# --- dpmd / netutils-wrapper chain (vendor service running in init domain) ---
+allow init netutils_wrapper_exec:file { read open getattr execute execute_no_trans };
+allow init system_file:file execute_no_trans; # [neverallow?] iptables via wrapper
+allow init self:netlink_route_socket { bind create nlmsg_read read write }; # v21 dpmd expansion (was read only)
+allow init socket_device:sock_file { create setattr }; # v21: init creating /dev/socket/dpmd at boot
+
+# --- qti_init_shell boot scripts ---
+# (v16) qti_init_shell rules PARKED: type is vendor-only, see parked list.
+
+# --- system_server reading the RTC node ---
+allow system_server sysfs:file { read open getattr };
+
+# --- vold probing /mnt/vendor/persist ---
+allow vold mnt_vendor_file:dir { read open ioctl };
+
+# --- WiFi HAL reading its NV calibration from persist ---
+allow hal_wifi_server mnt_vendor_file:file { read open };
+
+# --- vold storage tuning (read_ahead_kb): v16 PARKED, sysfs_mmc_host not plat-visible ---
+
+# --- dataservices app writing the dpmd socket ---
+allow system_app socket_device:sock_file { write };
+
+# ================= batch 2: light usage =================
+
+# --- Settings reading memory statistics (zram + vmalloc) ---
+allow system_app sysfs_zram:dir { search };
+allow system_app sysfs_zram:file { read open getattr };
+allow system_app proc_vmallocinfo:file { read open getattr };
+
+# --- GMS reading adbd properties ---
+allow gmscore_app system_adbd_prop:file { read open getattr };
+allow gmscore_app adbd_prop:file { read open getattr };
+
+# --- surfaceflinger inspecting the composer process (/proc/<pid>) ---
+# v16: via public attribute (hal_graphics_composer_default is vendor-only)
+allow surfaceflinger hal_graphics_composer_server:dir { search };
+allow surfaceflinger hal_graphics_composer_server:file { read open getattr };
+
+# --- camera HAL: debug props, system props, flash/torch LED path ---
+allow hal_camera_server persist_debug_prop:file { read open getattr };
+allow hal_camera_server system_prop:file { read open getattr };
+allow hal_camera_server sysfs_leds:dir { search };
+
+# --- audio HAL writing to an audioserver pipe ---
+allow hal_audio_server audioserver:fifo_file { write };
+
+# --- vendor_default_prop reads (property defaults bucket) ---
+# Sources observed: system_app, untrusted_app, gmscore_app, isolated_app.
+allow { system_app untrusted_app gmscore_app isolated_app } vendor_default_prop:file { read open getattr };
+
+# ================= batch 3: extended session =================
+
+# --- GMS calling the memtrack HAL ---
+allow gmscore_app hal_memtrack_server:binder { call };
+
+# --- MediaProvider scanning /data/cache/recovery ---
+allow mediaprovider cache_recovery_file:dir { read open };
+
+# --- crash_dump reading props while dumping a crashed HAL (batch 4 hotspot: same tuples recurred at both toggles, no change) ---
+allow crash_dump exported_wifi_prop:file { open getattr };
+allow crash_dump hwservicemanager_prop:file { open getattr };
+
+# ================= batch 4: WiFi hotspot on / client / off =================
+# No new rules. Every hotspot-window tuple was already drafted above
+# (init -> netutils_wrapper_exec chain, init -> system_file
+# execute_no_trans, init self netlink_route_socket, crash_dump props) or
+# already parked below (hal_wifi -> vendor_tombstone_data_file, perms
+# confirmed { search read open }). One NEW parked item from this batch:
+# hal_wifi_hostapd (see parked list).
+# Observation: the WiFi HAL crashed/restarted at BOTH hotspot toggles
+# (on ~15:16:27, off ~15:17:25) — permissive, so NOT denial-caused; same
+# pattern as the batch-3 idle crash at ~3345s. Monitor in the soak.
+
+# PARKED (v16 additions first):
+#   qti_init_shell -> dev_type:chr_file { getattr setattr }     (chown /dev/silead_fp; no sensor on
+#                                                                this unit, harmless)
+#   qti_init_shell -> vendor_file:file execute_no_trans         (/vendor/bin/awk from init scripts:
+#                                                                SUSPECT if post-boot tuning/zram
+#                                                                scripts misbehave under enforcing)
+#   vold -> sysfs_mmc_host:file write                           (read_ahead_kb tuning; perf only)
+# PARKED — cannot be expressed plat-side (vendor-only types with no
+# usable public attribute); accept the denial, monitor impact:
+#   ipacm-diag -> diag_device:chr_file { rw open ioctl }        (diagnostics only)
+#   netutils_wrapper -> diag_device:chr_file { read write }     (diagnostics only)
+#   vold -> oppo_reserve_file:dir { read open ioctl }           (vold probe; not vold-managed)
+#   vendor_camera_prop reads by system_server, system_app,
+#     gmscore_app, untrusted_app (Aperture, Jelly)               (MOST-HIT parked item: camera prop
+#                                                                hints — suspect #1 if camera
+#                                                                misbehaves under enforcing)
+#   camera_prop reads by untrusted_app (Aperture)               (vendor-declared prop type)
+#   hal_camera_default -> vendor_system_prop                    (vendor-declared prop type)
+#   system_app -> hal_rcsservice:binder { call transfer }       (RCS features only)
+#   init <-> hal_dpmQmiMgr:binder { call } (both directions)    (DPM QMI link; rest of the dpmd
+#                                                                chain is drafted in batch 1)
+#   init (comm dpmd) -> diag_device:chr_file { ioctl write }   (v21: /dev/diag, vendor-only type,
+#                                                                cannot be expressed plat-side;
+#                                                                same parked class as ipacm-diag diag)
+#   hal_wifi_default -> vendor_tombstone_data_file:dir          (WiFi HAL tombstone bookkeeping;
+#     { search read open }                                       vendor-declared type, only
+#                                                                data_file_type — too broad)
+#   hal_wifi_hostapd_default -> wifi_vendor_data_file:dir       (BATCH 4, hotspot: hostapd removing
+#     { write remove_name }                                      the "hostapd" entry from
+#                                                                /data/vendor/wifi. Type is vendor-
+#                                                                only; attributes are file_type +
+#                                                                data_file_type only — too broad.
+#                                                                NOTE: the stock vendor policy
+#                                                                itself grants hostapd only
+#                                                                { read getattr search open } on
+#                                                                this dir — the write/remove is
+#                                                                ungranted even on stock.
+#                                                                Label CHECKED on-device
+#                                                                2026-10-22: /data/vendor/wifi/
+#                                                                hostapd IS correctly labelled
+#                                                                hostapd_data_file (mislabel
+#                                                                theory refuted). Hostapd tries
+#                                                                to remove its own top dir from
+#                                                                the parent at each AP toggle —
+#                                                                reads as best-effort cleanup;
+#                                                                impact unknown until the
+#                                                                enforcing test. Remains
+#                                                                suspect #1 if HOTSPOT breaks
+#                                                                under enforcing.)
+#
+# SKIPPED — noise / correct to block:
+#   zygote -> adb_data_file:dir { search }                      (KernelSU manager spawn probing)
+#   untrusted_app -> postinstall_mnt_dir:dir { getattr }        (KernelSU manager probing)
+#   qti_init_shell -> self:fifo_file { ioctl }                  (pipe FIONREAD noise)
+HARVESTEOF
+ALLOW_COUNT=$(grep -c '^allow ' "$HARVEST_TE")
+if [ "$ALLOW_COUNT" -ne 28 ]; then
+  echo "ERROR: enforcing_harvest.te has $ALLOW_COUNT allow statements, expected 28" >&2
+  exit 1
+fi
+echo "enforcing policy installed: $HARVEST_TE (28 allow statements, batches 1-4 minus 3 parked + v21 dpmd)."
+
+# ENFORCING MODE (v15): remove the permissive flag from the kernel
+# cmdline so the build boots SELinux ENFORCING. The org BoardConfig.mk
+# adds it as its own line (BOARD_KERNEL_CMDLINE +=
+# androidboot.selinux=permissive); delete that line, then verify no
+# selinux= override remains AND that SELINUX_IGNORE_NEVERALLOWS is
+# still := true (kept deliberately for the first enforcing attempt;
+# removing it is the later hardening step).
+sed -i '/^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$/d' "$BOARDCONFIG"
+if grep -q 'androidboot.selinux=' "$BOARDCONFIG"; then
+  echo "ERROR: an androidboot.selinux= override remains in $BOARDCONFIG" >&2
+  exit 1
+fi
+if ! grep -q '^SELINUX_IGNORE_NEVERALLOWS := true$' "$BOARDCONFIG"; then
+  echo "ERROR: SELINUX_IGNORE_NEVERALLOWS is no longer := true in $BOARDCONFIG" >&2
+  exit 1
+fi
+echo "boot mode: SELinux ENFORCING (permissive cmdline removed)."
+# <<< V15 SELINUX SECTION <<<
+
 # USB PREFERENCES FIX (v14): apply the embedded Settings patch so the
 # "Use USB for" list is not permanently greyed out on this HAL-less
 # device and the unusable "USB controlled by" section is hidden
@@ -712,6 +1265,12 @@ source build/envsetup.sh
 # Build as userdebug (adb root for testing; the 2022 ROM was user, but
 # userdebug is strictly more useful for bring-up and costs nothing here).
 lunch lineage_RMX1805-userdebug
+# v16 EARLY POLICY PRE-CHECK: compile only the policy modules (minutes).
+# An unknown type / bad macro in the harvest or wiring dies here, not after
+# the multi-hour image build. 'sepolicy' is the monolithic all-policy build.
+mka plat_sepolicy.cil system_ext_sepolicy.cil sepolicy || {
+  echo "ERROR: early sepolicy pre-check failed - fix policy before a full build" >&2; exit 1; }
+echo "early sepolicy pre-check passed."
 mka bacon
 
 # ---------------------------------------------------------------------------
@@ -882,7 +1441,7 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Signed ROM ready: $SIGNED_OTA"
 echo "This build PASSED the in-build SELinux gate (see above) — the compiler"
-echo "fix is verified inside this ROM. Flash directly, no external check needed."
+echo "fix is verified inside this ROM. BEFORE FLASHING run the exact-argv secilc bench compile against the STOCK vendor CIL (v16 adds system_ext rules the gate cannot check against it)."
 echo "Flash plan (system+boot ONLY, stock vendor stays untouched):"
 echo "  1. Unzip boot.img and system.img from $SIGNED_OTA."
 echo "  2. TWRP > Install > Install Image: flash boot.img to Boot, then system.img to System Image."
@@ -891,3 +1450,9 @@ echo "     (the org-built vendor has no camera stack - flashing it kills the cam
 echo "  3. Coming from the v1 install (same ROM, same keys): no factory reset"
 echo "     needed. Reboot. First-boot checks: WiFi/BT, IMEI, camera, backlight slider,"
  echo "     display density 360, USB Preferences: list selectable, controlled-by hidden."
+echo "     Low-RAM checks: getprop ro.config.low_ram (=true), cat /proc/swaps +"
+ echo "     /sys/block/zram0/disksize (zram up, ~50% of RAM), dex2oat threads =4."
+ echo "     AudioFX check (v19): AudioFX app should appear in the app drawer"
+ echo "     (it was removed by RemovePackages in v14-v18). If it does not"
+ echo "     appear, the Lineage base does not include it on its own and a"
+ echo "     follow-up version must add it explicitly -- do not re-add the override." 
