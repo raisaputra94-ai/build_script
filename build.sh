@@ -1,3 +1,55 @@
+# === build-org-v22-lowram-audiofx-dpmd-batch5keepers: RMX1805-org tree (v21 + batch-5 keepers, PERMISSIVE stage-1) ===
+# v22 = build-org-v21-lowram-audiofx-dpmd verbatim PLUS the v22 changes
+# below, nothing else changed: low-RAM props, <=2048MiB heap tier,
+# zram-by-default, AudioFX kept, RealmeParts kept, USB fix, density 360,
+# secilc fix, signing and gate are exactly v21's.
+# build-org-v21-lowram-audiofx-dpmd.sh itself is untouched
+# (md5 6dc8021c96ffdb1d8708c8a908793425).
+# QUEUE THIS FILE, NOT v21, if the batch-5 keepers below are wanted.
+# User call 2026-10-30 ("do your best then") after the other-LLM
+# stage1/stage2 review: apply the NARROWED version only, NOT stage1 as-is.
+# Changes, both in enforcing_harvest.te only, allow count 28 -> 36 (+8):
+#  (1) healthd charger_exec / charger_prop (charger-mode boot; from the
+#      other LLM's batch-5 draft, tuples present in logs-2).
+#  (2) init <-> hwservicemanager binder/dir/file/process rules (5 rules;
+#      core service registration, tuples present in logs-2).
+#  (3) permissioncontroller_app tethering_service find (1 rule).
+# These 8 are plat-visible, so they compile in the plat build. They are
+# STILL candidates, not functionally proven: v22 boots PERMISSIVE on
+# purpose, so the setenforce 1 sweep on v22 itself is the proof step.
+# NOT in v22, deliberately (held for that proof, or undeliverable):
+#  - the whole odm_sepolicy.cil half: org BoardConfig defines NO odm
+#    partition, flash model is boot+system only, stage1 adds no odm
+#    image/flash step, and the file is self-described "not boot-tested,
+#    not compiled against Android 11 plat". Count on nothing from it
+#    until odm delivery is proven separately.
+#  - neverallow-flagged rules: tee system_prop set (needs its own prop
+#    type, not generic system_prop), system_app service_manager add
+#    (UCE/default_android_service) -- compile only via
+#    SELINUX_IGNORE_NEVERALLOWS and would block final hardening.
+#  - hal_fingerprint_oppo (odm): this unit has NO fingerprint sensor.
+#  - the rest of batch-5 plat items (init netlink_socket/rawip_socket,
+#    capability2 wake_alarm, vendor_file/toolbox, socket_device unlink,
+#    hal_camera default/radio/sysfs_net/vendor_shell, hal_wifi dir
+#    search, hal_audio sysfs dir, kernel mnt_vendor, audioserver
+#    vendor_default_prop, vendor_init set): candidates only, held for
+#    the setenforce 1 functional delta, NOT rejected permanently.
+# STAGING (this is the point of v22): the enforcing flip is HELD OUT.
+# v22 KEEPS the permissive cmdline line (v21 deleted it). Test plan on
+# v22: boot permissive, run the setenforce 1 sweep (WiFi/camera/BT,
+# plus calls/SMS/data after top-up), capture the denial dump BEFORE
+# reverting. Only if that sweep is clean does a later version remove
+# the permissive line. Do NOT hand-edit v22's lunch to user: the script
+# lunches userdebug on purpose, because a user build blocks adb root
+# and therefore the whole setenforce/dmesg diagnostic plan (build
+# 308136 was v21 + a user lunch edit by the user, not v21 as delivered).
+# Bench gate before flashing still applies exactly as in v19/v21.
+# pyyaml gate (separate, NOT fixed here): build 308136 died at soong
+# bootstrap on vendor/apn "make-apns" -> undefined module "pyyaml".
+# That failure is variant-independent and is NOT fixed by v22's policy
+# changes. Do NOT queue v22 until the pyyaml tree check is done, or
+# it dies in ~40s the same way.
+#
 # === build-org-v21-lowram-audiofx-dpmd: RMX1805-org tree (v19 + dpmd fix) ===
 # v21 = build-org-v19-lowram-audiofx verbatim PLUS the dpmd fix below, nothing
 # else changed: low-RAM props, <=2048MiB heap tier, zram-by-default, AudioFX
@@ -974,15 +1026,18 @@ echo "qcom sepolicy baseline: not wired (as harvested)."
 # ENFORCING POLICY (v15): install the denial-harvest policy into the
 # org device tree's plat-private sepolicy dir (BoardConfig.mk wires
 # sepolicy/private via BOARD_PLAT_PRIVATE_SEPOLICY_DIR). Content is
-# the consolidated batches 1-4 draft (27 allow statements after v16 review) verbatim, plus the v21 dpmd fix (28 total),
-# preceded by a shipped-as header. Fail fast if the written file
-# does not carry exactly 28 allow statements.
+# the consolidated batches 1-4 draft (27 allow statements after v16 review) verbatim, plus the v21 dpmd fix, plus
+# the v22 batch-5 keepers (36 total), preceded by a shipped-as header.
+# Fail fast if the written file does not carry exactly 36 allow statements.
 HARVEST_TE=device/oppo/RMX1805/sepolicy/private/enforcing_harvest.te
 cat > "$HARVEST_TE" <<'HARVESTHDR'
-# RMX1805 enforcing harvest -- SHIPPED in build-org-v16 (2026-10-24).
-# Frozen at batches 1-4 (27 allow statements after v16 review). Batch-5 round (voice
-# calls / SMS / normal-reboot dump) still pending at ship time; zero
-# telephony denials in batches 1-4. Source: enforcing_batch1234_draft.te
+# RMX1805 enforcing harvest -- SHIPPED in build-org-v22 (2026-10-30).
+# Batches 1-4 (27 allow statements after v16 review) + v21 dpmd fix
+# + v22 batch-5 keepers (8 rules, plat-side only) = 36 total.
+# Source: enforcing_batch1234_draft.te + other-LLM batch-5 draft
+# (enforcing_batch1235.te), narrowed to the keepers listed in the
+# v22 header. v22 boots PERMISSIVE; the setenforce 1 sweep on v22
+# is the proof step for the 8 keepers.
 HARVESTHDR
 cat >> "$HARVEST_TE" <<'HARVESTEOF'
 # RMX1805 org + stock vendor — SELinux enforcing draft (DRAFT)
@@ -1098,6 +1153,22 @@ allow crash_dump hwservicemanager_prop:file { open getattr };
 # (on ~15:16:27, off ~15:17:25) — permissive, so NOT denial-caused; same
 # pattern as the batch-3 idle crash at ~3345s. Monitor in the soak.
 
+# ================= v22: batch-5 keepers (plat-side only) =================
+# From the other-LLM batch-5 draft; tuples present in logs-2. These are
+# candidates being TESTED on this permissive build, not proven rules:
+# the setenforce 1 sweep on v22 decides whether they stay.
+# --- charger mode (offmode charging; healthd runs /system/bin/charger) ---
+allow healthd charger_exec:file { entrypoint execute getattr read open map };
+allow healthd charger_prop:file { getattr open read };
+# --- hwservicemanager <-> init (core service registration) ---
+allow init hwservicemanager:binder { call };
+allow hwservicemanager init:binder { transfer };
+allow hwservicemanager init:dir { search };
+allow hwservicemanager init:file { open read };
+allow hwservicemanager init:process { getattr };
+# --- permission controller finding the tethering service ---
+allow permissioncontroller_app tethering_service:service_manager { find };
+
 # PARKED (v16 additions first):
 #   qti_init_shell -> dev_type:chr_file { getattr setattr }     (chown /dev/silead_fp; no sensor on
 #                                                                this unit, harmless)
@@ -1154,29 +1225,29 @@ allow crash_dump hwservicemanager_prop:file { open getattr };
 #   qti_init_shell -> self:fifo_file { ioctl }                  (pipe FIONREAD noise)
 HARVESTEOF
 ALLOW_COUNT=$(grep -c '^allow ' "$HARVEST_TE")
-if [ "$ALLOW_COUNT" -ne 28 ]; then
-  echo "ERROR: enforcing_harvest.te has $ALLOW_COUNT allow statements, expected 28" >&2
+if [ "$ALLOW_COUNT" -ne 36 ]; then
+  echo "ERROR: enforcing_harvest.te has $ALLOW_COUNT allow statements, expected 36" >&2
   exit 1
 fi
-echo "enforcing policy installed: $HARVEST_TE (28 allow statements, batches 1-4 minus 3 parked + v21 dpmd)."
+echo "enforcing policy installed: $HARVEST_TE (36 allow statements, batches 1-4 minus 3 parked + v21 dpmd + v22 batch-5 keepers)."
 
-# ENFORCING MODE (v15): remove the permissive flag from the kernel
-# cmdline so the build boots SELinux ENFORCING. The org BoardConfig.mk
-# adds it as its own line (BOARD_KERNEL_CMDLINE +=
-# androidboot.selinux=permissive); delete that line, then verify no
-# selinux= override remains AND that SELINUX_IGNORE_NEVERALLOWS is
-# still := true (kept deliberately for the first enforcing attempt;
-# removing it is the later hardening step).
-sed -i '/^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$/d' "$BOARDCONFIG"
-if grep -q 'androidboot.selinux=' "$BOARDCONFIG"; then
-  echo "ERROR: an androidboot.selinux= override remains in $BOARDCONFIG" >&2
+# v22 STAGE-1: KEEP the permissive flag -- do NOT delete it (v21 deleted
+# it). The org BoardConfig.mk adds it as its own line (BOARD_KERNEL_CMDLINE +=
+# androidboot.selinux=permissive). v22 must boot PERMISSIVE so the
+# setenforce 1 sweep can prove the 8 keepers without risking a boot
+# loop from an untested policy. Fail fast if the permissive line is
+# somehow already gone (that would mean this is not a stage-1 build).
+# SELINUX_IGNORE_NEVERALLOWS must still be := true (kept deliberately
+# for the first enforcing attempt; removing it is the later hardening step).
+if ! grep -q '^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$' "$BOARDCONFIG"; then
+  echo "ERROR: permissive cmdline line missing from $BOARDCONFIG -- v22 must boot permissive" >&2
   exit 1
 fi
 if ! grep -q '^SELINUX_IGNORE_NEVERALLOWS := true$' "$BOARDCONFIG"; then
   echo "ERROR: SELINUX_IGNORE_NEVERALLOWS is no longer := true in $BOARDCONFIG" >&2
   exit 1
 fi
-echo "boot mode: SELinux ENFORCING (permissive cmdline removed)."
+echo "boot mode: SELinux PERMISSIVE (v22 stage-1 test build; enforcing flip held out)."
 # <<< V15 SELINUX SECTION <<<
 
 # USB PREFERENCES FIX (v14): apply the embedded Settings patch so the
@@ -1264,7 +1335,7 @@ source build/envsetup.sh
 
 # Build as userdebug (adb root for testing; the 2022 ROM was user, but
 # userdebug is strictly more useful for bring-up and costs nothing here).
-lunch lineage_RMX1805-user
+lunch lineage_RMX1805-userdebug
 # v16 EARLY POLICY PRE-CHECK: compile only the policy modules (minutes).
 # An unknown type / bad macro in the harvest or wiring dies here, not after
 # the multi-hour image build. 'sepolicy' is the monolithic all-policy build.
