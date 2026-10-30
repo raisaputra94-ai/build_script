@@ -1,3 +1,92 @@
+# === build-org-v25-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin: v24 + vendor/apn pinned (DEFINITIVE pyyaml fix) ===
+# v25 = build-org-v24-lowram-audiofx-dpmd-batch5keepers-pyyaml.sh verbatim
+# PLUS the vendor/apn pin below, nothing else changed: harvest stays 36
+# rules, permissive stage-1 staging, lunch userdebug, low-RAM,
+# AudioFX/RealmeParts kept. build-org-v24 itself is untouched
+# (md5 4a1a5883b21acdd8d5cafe4a3474fe35); v23/v22 also untouched.
+# QUEUE THIS FILE, NOT v22, v23, or v24.
+# User call 2026-10-31 ("fix it please") after build 308249: that run was
+# v22, NOT v24 (v24's pyyaml check is absent from its log), so v24's
+# manifest pin was never actually tested -- and its cross-namespace
+# visibility was only ever an inference. Rather than spend another
+# queue finding out, v25 removes the dependency itself.
+# DEFINITIVE FIX: pin vendor/apn in the local manifest to
+# cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e ("apn: Import Pixel APN
+# snapshot", parent of a764d38). VERIFIED 2026-10-31 by reading that
+# commit's Android.bp: make-apns there is a sh_binary_host running
+# make-apns.sh (tools: ["make-apns", "xmllint"]), with NO pyyaml
+# reference anywhere in the file. So soong cannot fail on the undefined
+# pyyaml module even if v24's visibility inference was wrong. The v24
+# pyyaml manifest pin is KEPT as a backup: if the vendor/apn pin somehow
+# does not apply (still on main), pyyaml is required again and the
+# fail-fast below enforces it. The fail-fast is now CONDITIONAL on
+# which vendor/apn actually landed (see that section) -- it no longer
+# aborts a build that does not need pyyaml.
+# Trade-off, stated plainly: APN profiles are the pre-2026-10-21
+# snapshot, so a carrier APN added after that date would be absent.
+# Telkomsel/by.U APNs are long-standing and expected present; a missing
+# APN would show as a mobile-data setup issue on the phone, not a build
+# failure, and would be fixable by adding that APN by hand.
+# Also unchanged from v24: queue on a FRESH Crave workspace if possible.
+# Build 308249's log also showed "cannot pull with rebase: You have
+# unstaged changes" from workspace reuse; that did not stop that run,
+# but a dirty workspace can interfere with a new manifest project
+# syncing. Back up $HOME/.android-certs before discarding any clone.
+#
+# === build-org-v24-lowram-audiofx-dpmd-batch5keepers-pyyaml: v23 + verified pyyaml tag ===
+# v24 = build-org-v23-lowram-audiofx-dpmd-batch5keepers-pyyaml.sh verbatim
+# PLUS the pin change below (branch -> frozen tag), nothing else changed:
+# harvest stays 36 rules, permissive stage-1 staging, lunch userdebug,
+# low-RAM, AudioFX/RealmeParts kept. build-org-v23 itself is untouched
+# (md5 5a78d8a5b5368149b816052d4241f98e); build-org-v22 is also untouched
+# (md5 4477cabf74e68bb63c499fac6fc1826c). QUEUE THIS FILE, NOT v22 or v23.
+# ROOT CAUSE (verified 2026-10-30 against the live upstream repos, not guessed):
+# build 308136 died at soong bootstrap in ~40s with
+#   vendor/apn/Android.bp:42:1: "make-apns" depends on undefined module "pyyaml"
+# - vendor/apn comes from LineageOS/android_vendor_apn at revision="main"
+#   (Revived lineage-18.1 snippets/lineage.xml pins it to main; there is NO
+#   lineage-18.1 branch of that repo, upstream or Revived).
+# - On 2026-10-21 commit a764d38 "apn: Merge upstream profiles at build time"
+#   rewrote vendor/apn: make-apns is now a python_binary_host whose
+#   libs: ["pyyaml"], and make-apns.py does `import yaml` (yaml.SafeLoader /
+#   yaml.load). A follow-up, 7693bb9 "apn: Support Python 3.8" (2026-10-27),
+#   only reworks serialize() for Python 3.8; it does not touch the pyyaml dep.
+# - The "pyyaml" Soong module is defined ONLY in AOSP
+#   platform/external/python/pyyaml, lib/yaml/Android.bp:
+#     python_library { name: "pyyaml", host_supported: true,
+#                      srcs: ["*.py"], pkg_path: "yaml" }
+#   That repo postdates Android 11: no android11-release branch exists, and
+#   NEITHER the Revived nor the upstream lineage-18.1 manifest syncs it
+#   (Revived default.xml has 25 other external/python/* entries, none pyyaml;
+#   lineage-22.2 DOES sync it). So the 18.1 tree genuinely has no pyyaml
+#   module for vendor/apn to resolve -- version skew, not a Revived omission.
+# FIX (this version): add platform/external/python/pyyaml to the local
+# manifest below, pinned to the FROZEN tag refs/tags/android-13.0.0_r1
+# (verified 2026-10-30 13:20-13:23 UTC: tag f55a301b3e4c972e6c568b1bd6cca3f2540a5701,
+# commit 3af1af083112b4e1306b13776b21e96b2e6c96cd, "Android 13.0.0 Release 1",
+# 15 Aug 2022; earliest android-13.0.0_r* tag for this repo, r1-r84 listed,
+# no r0). At that exact tag, lib/yaml/Android.bp was read and defines
+# python_library { name: "pyyaml", host_supported: true, py3 enabled: true,
+# py2 enabled: false, pkg_path: "yaml" } -- py3 enabled, so the 18.1 host
+# python (3.8) is in range, and python_library + pkg_path are Android-11-era
+# Soong features. Pinned to a frozen tag, not a branch or main, so this
+# cannot drift the way vendor/apn@main just did.
+# WHAT IS STILL UNPROVEN (stated plainly, per the user's rule): cross-
+# namespace visibility of "pyyaml" from vendor/apn under 18.1 Soong is
+# inferred, not proven -- neither vendor/apn nor lib/yaml declares a
+# soong_namespace/visibility block, which is the normal shape for these
+# files. That is why this version keeps the post-sync FAIL-FAST (below):
+# if external/python/pyyaml/lib/yaml/Android.bp is missing or does not
+# define name "pyyaml" after sync, the script stops in seconds with a
+# clear message instead of dying at soong bootstrap. If soong still
+# reports "undefined module pyyaml" after that check passes, the next
+# step is NOT another manifest guess -- it is pinning vendor/apn to the
+# parent of a764d38, whose hash IS now verified:
+# cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e ("apn: Import Pixel APN snapshot").
+# Also fixed in passing: the pre-check failure message no longer claims a
+# policy failure when soong bootstrap itself dies (that mislabel is what
+# 308136's log showed).
+# QUEUE THIS FILE (v24), NOT v22 or v23. Do NOT hand-edit its lunch to user.
 # === build-org-v22-lowram-audiofx-dpmd-batch5keepers: RMX1805-org tree (v21 + batch-5 keepers, PERMISSIVE stage-1) ===
 # v22 = build-org-v21-lowram-audiofx-dpmd verbatim PLUS the v22 changes
 # below, nothing else changed: low-RAM props, <=2048MiB heap tier,
@@ -44,11 +133,11 @@
 # and therefore the whole setenforce/dmesg diagnostic plan (build
 # 308136 was v21 + a user lunch edit by the user, not v21 as delivered).
 # Bench gate before flashing still applies exactly as in v19/v21.
-# pyyaml gate (separate, NOT fixed here): build 308136 died at soong
-# bootstrap on vendor/apn "make-apns" -> undefined module "pyyaml".
-# That failure is variant-independent and is NOT fixed by v22's policy
-# changes. Do NOT queue v22 until the pyyaml tree check is done, or
-# it dies in ~40s the same way.
+# pyyaml gate (v22 text, SUPERSEDED by the v23 fix above): build 308136
+# died at soong bootstrap on vendor/apn "make-apns" -> undefined module
+# "pyyaml". That failure is variant-independent and was NOT fixed by v22's
+# policy changes. v23 added the pyyaml manifest project + post-sync
+# fail-fast; v24 pins it to the verified frozen tag. Queue v24, not v22/v23.
 #
 # === build-org-v21-lowram-audiofx-dpmd: RMX1805-org tree (v19 + dpmd fix) ===
 # v21 = build-org-v19-lowram-audiofx verbatim PLUS the dpmd fix below, nothing
@@ -523,6 +612,30 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
   <remote name="gh" fetch="https://github.com/" />
   <project name="RMX1805/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="lineage-18.1" />
   <project name="RMX1805/vendor_oppo" path="vendor/oppo" remote="gh" revision="lineage-18.1" />
+  <!-- V24 PYYAML FIX (v23 pinned the android13-release branch; v24 pins
+       the verified frozen tag instead): vendor/apn (synced at
+       revision="main" by the base manifest) now needs the "pyyaml" Soong
+       module, which no lineage-18.1 manifest syncs. Add AOSP
+       platform/external/python/pyyaml at refs/tags/android-13.0.0_r1
+       (commit 3af1af083112b4e1306b13776b21e96b2e6c96cd; lib/yaml/Android.bp
+       at that tag defines python_library "pyyaml", py3 enabled).
+       Remote "aosp" is defined in the base manifest. Do NOT pin this to
+       main or a branch: unpinned main is exactly how vendor/apn broke
+       on 2026-10-21. -->
+  <project name="platform/external/python/pyyaml" path="external/python/pyyaml" remote="aosp" revision="refs/tags/android-13.0.0_r1" />
+  <!-- V25 APN PIN (definitive pyyaml fix -- see header): override the base
+       manifest's vendor/apn (revision="main") with the verified pre-pyyaml
+       snapshot cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e ("apn: Import Pixel
+       APN snapshot", parent of a764d38). At that revision make-apns is a
+       sh_binary_host (make-apns.sh), NOT a python_binary_host, and its
+       Android.bp (read 2026-10-31) contains no pyyaml reference at all --
+       so soong cannot fail on the undefined pyyaml module even if the
+       v24 cross-namespace visibility inference turns out wrong.
+       Trade-off: APN profiles are the pre-2026-10-21 snapshot; a carrier
+       APN added after that date would be absent (see header). A
+       local-manifest project with the same path overrides the base
+       manifest entry for that path. -->
+  <project name="LineageOS/android_vendor_apn" path="vendor/apn" remote="gh" revision="cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e" />
   <!-- NOTE: device/qcom/sepolicy-legacy-um is already in the LineageOS-Revived
        base manifest (snippets/lineage.xml) at revision lineage-18.1-legacy-um.
        Do NOT add it here: a duplicate path aborts the sync. -->
@@ -557,6 +670,38 @@ for f in device/oppo/RMX1805/lineage_RMX1805.mk \
   fi
 done
 echo "All device sources present."
+
+# V25 APN PIN CHECK (the definitive fix -- see header): vendor/apn is
+# pinned in the local manifest to cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e
+# (pre-pyyaml snapshot). At that revision make-apns is a sh_binary_host
+# running make-apns.sh, with NO pyyaml dependency at all (verified by
+# reading that commit's Android.bp). So FIRST check which vendor/apn
+# actually landed after sync:
+# - If it is the pinned hash, pyyaml is not required at all. The pyyaml
+#   module check below becomes informational only -- warn and continue
+#   if it is missing; do NOT abort a build that does not need it.
+# - If it is anything else (the pin did not apply, still on main), then
+#   pyyaml IS required, and the original v23/v24 fail-fast applies:
+#   stop in seconds if the module definition is missing.
+APN_HEAD="$(git -C vendor/apn rev-parse HEAD 2>/dev/null || echo MISSING)"
+APN_PIN="cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e"
+if [ "$APN_HEAD" = "$APN_PIN" ]; then
+  echo "vendor/apn pinned to pre-pyyaml snapshot ($APN_PIN); pyyaml module not required."
+  if grep -q 'name *: *"pyyaml"' external/python/pyyaml/lib/yaml/Android.bp 2>/dev/null; then
+    echo "pyyaml module definition present (external/python/pyyaml/lib/yaml/Android.bp)."
+  else
+    echo "NOTE: pyyaml module definition missing after sync, but not required with pinned vendor/apn -- continuing."
+  fi
+else
+  echo "WARNING: vendor/apn is at $APN_HEAD, not the pinned snapshot -- pyyaml IS required." >&2
+  if ! grep -q 'name *: *"pyyaml"' external/python/pyyaml/lib/yaml/Android.bp 2>/dev/null; then
+    echo "ERROR: pyyaml Soong module definition missing after sync: expected" >&2
+    echo "  external/python/pyyaml/lib/yaml/Android.bp to define name \"pyyaml\"." >&2
+    echo "  The vendor/apn pin did not apply AND the pyyaml pin did not deliver it -- do not proceed." >&2
+    exit 1
+  fi
+  echo "pyyaml module definition present (external/python/pyyaml/lib/yaml/Android.bp)."
+fi
 
 # Verify the prebuilt kernel is the proven one. The org tree's prebuilt/kernel
 # must be byte-identical (md5 181bc0390f877a8f288c3663adc28faa) to the 2022
@@ -1340,7 +1485,10 @@ lunch lineage_RMX1805-userdebug
 # An unknown type / bad macro in the harvest or wiring dies here, not after
 # the multi-hour image build. 'sepolicy' is the monolithic all-policy build.
 mka plat_sepolicy.cil system_ext_sepolicy.cil sepolicy || {
-  echo "ERROR: early sepolicy pre-check failed - fix policy before a full build" >&2; exit 1; }
+  echo "ERROR: early pre-check failed -- this may be a soong bootstrap failure" >&2
+  echo "  (e.g. an undefined module like pyyaml), NOT necessarily a policy" >&2
+  echo "  failure. Read the soong error above before touching policy." >&2
+  exit 1; }
 echo "early sepolicy pre-check passed."
 mka bacon
 
