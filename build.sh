@@ -1,3 +1,22 @@
+# === build-org-v26-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin-xmlfix: v25 + manifest XML fix ===
+# v26 = build-org-v25-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin.sh verbatim
+# PLUS the two-line manifest fix below, nothing else changed: harvest stays 36
+# rules, permissive stage-1 staging, lunch userdebug, low-RAM,
+# AudioFX/RealmeParts kept, vendor/apn pin cfcbd9d... kept. build-org-v25
+# itself is untouched (md5 bb63bd75d4ba4d5abbf8ecd6d3cac20c).
+# QUEUE THIS FILE, NOT v22, v23, v24, or v25.
+# MY BUG, owned 2026-11-01: build 308378 (the v25 queue -- the user queued
+# the RIGHT file this time) died in 23.5s at repo init with
+#   fatal: error parsing manifest /tmp/src/android/.repo/local_manifests/rmx1805.xml:
+#   not well-formed (invalid token): line 17, column 44
+# Cause: "--" inside an XML comment is ILLEGAL -- only the closing "-->"
+# may contain it. My v25 comment had TWO of them ("fix -- see header" and
+# a trailing "at all --"). Reproduced locally: the extracted manifest
+# fails python's XML parser with the exact same line/column. Both are
+# removed below, and the script now PARSES the generated manifest with
+# python3 before repo init, so this class of error dies loudly in seconds
+# on the build machine instead of wasting a queue slot.
+#
 # === build-org-v25-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin: v24 + vendor/apn pinned (DEFINITIVE pyyaml fix) ===
 # v25 = build-org-v24-lowram-audiofx-dpmd-batch5keepers-pyyaml.sh verbatim
 # PLUS the vendor/apn pin below, nothing else changed: harvest stays 36
@@ -623,12 +642,12 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
        main or a branch: unpinned main is exactly how vendor/apn broke
        on 2026-10-21. -->
   <project name="platform/external/python/pyyaml" path="external/python/pyyaml" remote="aosp" revision="refs/tags/android-13.0.0_r1" />
-  <!-- V25 APN PIN (definitive pyyaml fix -- see header): override the base
+  <!-- V25 APN PIN (definitive pyyaml fix, see header): override the base
        manifest's vendor/apn (revision="main") with the verified pre-pyyaml
        snapshot cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e ("apn: Import Pixel
        APN snapshot", parent of a764d38). At that revision make-apns is a
        sh_binary_host (make-apns.sh), NOT a python_binary_host, and its
-       Android.bp (read 2026-10-31) contains no pyyaml reference at all --
+       Android.bp (read 2026-10-31) contains no pyyaml reference at all,
        so soong cannot fail on the undefined pyyaml module even if the
        v24 cross-namespace visibility inference turns out wrong.
        Trade-off: APN profiles are the pre-2026-10-21 snapshot; a carrier
@@ -643,6 +662,17 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
        device/oppo/RMX1805/prebuilt/kernel (md5-verified below). -->
 </manifest>
 XMLEOF
+
+# V26: validate the generated local manifest BEFORE repo init. A malformed
+# local manifest aborts repo init in seconds with a cryptic error (build
+# 308378 died on exactly this: "--" inside an XML comment is illegal in
+# XML). Parse it here with python3 so the failure is loud and local, and
+# no queue slot is spent on a manifest typo.
+if ! python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])' .repo/local_manifests/rmx1805.xml; then
+  echo "ERROR: generated local manifest is not well-formed XML -- fix rmx1805.xml before repo init." >&2
+  exit 1
+fi
+echo "Local manifest parsed OK."
 
 repo init \
   -u https://github.com/LineageOS-Revived/android.git \
