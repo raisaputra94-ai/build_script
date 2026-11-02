@@ -1,3 +1,27 @@
+# === build-org-v27-lowram-audiofx-dpmd-batch5keepers-apnpin: v26 minus the duplicate pyyaml project ===
+# v27 = build-org-v26-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin-xmlfix.sh verbatim
+# PLUS the pyyaml project line removed from the local manifest, nothing else
+# changed: harvest stays 36 rules, permissive stage-1 staging, lunch userdebug,
+# low-RAM, AudioFX/RealmeParts kept, vendor/apn pin cfcbd9d... kept. build-org-v26
+# itself is untouched (md5 ef43f4c882cb2eaeb8aa424c58919fd4).
+# QUEUE THIS FILE, NOT v22, v23, v24, v25, or v26.
+# Build 308560 (the v26 queue) died in 24s at repo init with:
+#   fatal: duplicate path external/python/pyyaml in .../.repo/manifests/default.xml
+# v26's own XML fix worked ("Local manifest parsed OK." is in that log) -- this is
+# a NEW failure, not the old one. Cause: the BASE manifest now defines pyyaml
+# itself, verified 2026-11-02 by reading Revived lineage-18.1 default.xml:
+#   <project path="external/python/pyyaml" name="platform/external/python/pyyaml"
+#            groups="pdk" remote="aosp" revision="refs/tags/android-13.0.0_r75" />
+# (One line only; no other pyyaml mention in that file.) So the local copy added
+# by v23-v26 is now a duplicate and repo init aborts on it. Removing it is the
+# fix -- pyyaml still syncs, from the base manifest at r75, and the post-sync
+# check below still verifies the module definition actually landed. The
+# vendor/apn pin (cfcbd9d...) still makes pyyaml unnecessary for this build in
+# the first place, so the r1-vs-r75 tag difference is moot here.
+# Correction to the Oct 30 research note: it claimed no lineage-18.1 manifest
+# syncs pyyaml. The live file is the ground truth and repo's own error confirms
+# it does now -- whether added since or missed then, the claim no longer holds.
+#
 # === build-org-v26-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin-xmlfix: v25 + manifest XML fix ===
 # v26 = build-org-v25-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin.sh verbatim
 # PLUS the two-line manifest fix below, nothing else changed: harvest stays 36
@@ -631,17 +655,13 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
   <remote name="gh" fetch="https://github.com/" />
   <project name="RMX1805/device_oppo_RMX1805" path="device/oppo/RMX1805" remote="gh" revision="lineage-18.1" />
   <project name="RMX1805/vendor_oppo" path="vendor/oppo" remote="gh" revision="lineage-18.1" />
-  <!-- V24 PYYAML FIX (v23 pinned the android13-release branch; v24 pins
-       the verified frozen tag instead): vendor/apn (synced at
-       revision="main" by the base manifest) now needs the "pyyaml" Soong
-       module, which no lineage-18.1 manifest syncs. Add AOSP
-       platform/external/python/pyyaml at refs/tags/android-13.0.0_r1
-       (commit 3af1af083112b4e1306b13776b21e96b2e6c96cd; lib/yaml/Android.bp
-       at that tag defines python_library "pyyaml", py3 enabled).
-       Remote "aosp" is defined in the base manifest. Do NOT pin this to
-       main or a branch: unpinned main is exactly how vendor/apn broke
-       on 2026-10-21. -->
-  <project name="platform/external/python/pyyaml" path="external/python/pyyaml" remote="aosp" revision="refs/tags/android-13.0.0_r1" />
+  <!-- V27: the pyyaml project that v23-v26 added here is REMOVED. The base
+       manifest now defines external/python/pyyaml itself, so keeping this
+       line aborts repo init with "duplicate path external/python/pyyaml"
+       (build 308560, 24s). The vendor/apn pin below still makes pyyaml
+       unnecessary for this build; the post-sync check further down still
+       verifies the module definition actually landed, from whichever
+       manifest supplied it. -->
   <!-- V25 APN PIN (definitive pyyaml fix, see header): override the base
        manifest's vendor/apn (revision="main") with the verified pre-pyyaml
        snapshot cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e ("apn: Import Pixel
