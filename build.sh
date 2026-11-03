@@ -1,3 +1,28 @@
+# === build-org-v28-lowram-audiofx-dpmd-batch5keepers-apnpin: v27 + vendor/apn remove-project + baked upstream check ===
+# v28 = build-org-v27-lowram-audiofx-dpmd-batch5keepers-apnpin.sh verbatim
+# PLUS two changes, nothing else: harvest stays 36 rules, permissive stage-1,
+# lunch userdebug, low-RAM, AudioFX/RealmeParts kept, vendor/apn pin cfcbd9d...
+# kept. build-org-v27 itself is untouched (md5 9ebc883380fb52e2dee3911d799f7a6b).
+# QUEUE THIS FILE, NOT v22, v23, v24, v25, v26, or v27.
+# Build 308784 (the v27 queue) died in 24.5s at repo init with:
+#   fatal: duplicate path vendor/apn in .../.repo/manifests/default.xml
+# v27's fix worked (no pyyaml duplicate in that log) -- this is the NEXT
+# duplicate, not the same one. Root cause, owned: the v25 design assumed a
+# local-manifest project with the same path OVERRIDES the base entry. It does
+# not -- repo aborts on the duplicate. The override mechanism is
+# <remove-project name="LineageOS/android_vendor_apn" /> FIRST, then the
+# <project> line. That was latent since v25, masked because repo reports only
+# the first duplicate: v25 died on the XML bug, v26 on pyyaml, v27 on apn.
+# (2) BAKED CHECK: the script now fetches the LIVE base manifest + its
+# includes before repo init and fails fast if any local project path collides
+# with the base without a covering <remove-project>. No more one-duplicate-
+# per-queue-cycle: the next upstream change gets caught locally, in seconds,
+# instead of eating another queue slot. After this fix the local manifest
+# holds only device/oppo/RMX1805, vendor/oppo (not in the base manifest)
+# and vendor/apn (removed then re-added), so no further duplicate is
+# possible from these three -- the baked check is the backstop if upstream
+# adds one later.
+#
 # === build-org-v27-lowram-audiofx-dpmd-batch5keepers-apnpin: v26 minus the duplicate pyyaml project ===
 # v27 = build-org-v26-lowram-audiofx-dpmd-batch5keepers-pyyaml-apnpin-xmlfix.sh verbatim
 # PLUS the pyyaml project line removed from the local manifest, nothing else
@@ -671,9 +696,12 @@ cat > .repo/local_manifests/rmx1805.xml << 'XMLEOF'
        so soong cannot fail on the undefined pyyaml module even if the
        v24 cross-namespace visibility inference turns out wrong.
        Trade-off: APN profiles are the pre-2026-10-21 snapshot; a carrier
-       APN added after that date would be absent (see header). A
-       local-manifest project with the same path overrides the base
-       manifest entry for that path. -->
+       APN added after that date would be absent (see header). CORRECTION
+       (v28, build 308784): a local-manifest project with the same path does
+       NOT override the base entry, so repo aborts repo init with
+       "duplicate path vendor/apn". The override mechanism is
+       <remove-project> by NAME first, then the <project> line. -->
+  <remove-project name="LineageOS/android_vendor_apn" />
   <project name="LineageOS/android_vendor_apn" path="vendor/apn" remote="gh" revision="cfcbd9d61d6c22e5b60b2f10274d6cd1ff460f5e" />
   <!-- NOTE: device/qcom/sepolicy-legacy-um is already in the LineageOS-Revived
        base manifest (snippets/lineage.xml) at revision lineage-18.1-legacy-um.
@@ -693,6 +721,65 @@ if ! python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])'
   exit 1
 fi
 echo "Local manifest parsed OK."
+
+# V28: compare the generated local manifest against the LIVE base manifest
+# BEFORE repo init. repo aborts on any local <project> whose path the base
+# already defines -- and it reports only the first duplicate, so each queue
+# attempt exposed exactly one (build 308560: external/python/pyyaml; build
+# 308784: vendor/apn). A research note from an earlier day is not proof of
+# what the upstream file holds now, so fetch it live here. If the download
+# fails (no network), warn and continue -- the old behaviour -- rather than
+# failing a build on a flaky fetch.
+echo "Checking local manifest against live base manifest..."
+if python3 - .repo/local_manifests/rmx1805.xml <<'PYEOF'
+import sys, urllib.request, xml.etree.ElementTree as ET
+
+LOCAL = sys.argv[1]
+BASE = "https://raw.githubusercontent.com/LineageOS-Revived/android/lineage-18.1/"
+TIMEOUT = 30
+
+def fetch(rel):
+    with urllib.request.urlopen(BASE + rel, timeout=TIMEOUT) as r:
+        return r.read()
+
+def projects(xml_bytes):
+    root = ET.fromstring(xml_bytes)
+    out = {}
+    for p in root.iter("project"):
+        out[p.get("path")] = p.get("name")
+    return out, [i.get("name") for i in root.iter("include")]
+
+try:
+    base, includes = projects(fetch("default.xml"))
+    for inc in includes:
+        try:
+            sub, _ = projects(fetch(inc))
+            base.update(sub)
+        except Exception as e:
+            print("WARN: could not fetch base include %s (%s); skipping it." % (inc, e))
+except Exception as e:
+    print("WARN: could not fetch live base manifest (%s); skipping upstream-duplicate check." % e)
+    sys.exit(0)
+
+local = ET.parse(LOCAL).getroot()
+removed = {r.get("name") for r in local.iter("remove-project")}
+bad = []
+for p in local.iter("project"):
+    path, name = p.get("path"), p.get("name")
+    if path in base and base[path] not in removed:
+        bad.append((path, base[path]))
+if bad:
+    for path, basename in bad:
+        print("ERROR: local project path %r is already defined in the base manifest (as %r); repo init will abort with 'duplicate path'. Add a <remove-project name=%r /> before it, or drop the project." % (path, basename, basename))
+    sys.exit(1)
+print("Upstream-duplicate check OK: no local project path collides with the live base manifest.")
+PYEOF
+then
+  :
+else
+  echo "ERROR: upstream-duplicate check failed -- see above." >&2
+  exit 1
+fi
 
 repo init \
   -u https://github.com/LineageOS-Revived/android.git \
