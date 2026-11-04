@@ -1,3 +1,44 @@
+#!/bin/bash
+# === build-org-v31-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing: v30 minus the QCOM sepolicy removal ===
+# v31 = v30 verbatim EXCEPT the QCOM private/public sepolicy removal is
+# reverted: the tree's BOARD_PLAT_*_SEPOLICY_DIR lines for device/qcom/sepolicy
+# are left as the v28 build had them -- that config compiled and passed the
+# gate. v30's new checks are KEPT: expanded cmdline/bootconfig verification
+# after lunch, signed-OTA boot.img cmdline inspection, strengthened first-boot
+# checks. Harvest 36, enforcing flip, NEVERALLOWS true, all as v30.
+# QUEUE THIS FILE, NOT v30, v29, v28 (permissive), or anything older.
+# === build-org-v30-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing: v29 + policy wiring and artifact checks ===
+# v30 = v29 plus: remove and verify the stale upstream QCOM plat sepolicy
+# private/public wiring (the linked RMX1805 tree still has those lines);
+# verify expanded kernel cmdline/bootconfig after lunch; inspect the signed
+# OTA's actual boot.img cmdline; and strengthen first-boot SELinux checks.
+# This does NOT prove the stock-vendor combined policy is correct. The
+# stock-vendor CIL compatibility check and on-device enforcing test remain
+# mandatory before treating this as a stable daily-driver build.
+# v29 = build-org-v28-lowram-audiofx-dpmd-batch5keepers-apnpin.sh verbatim
+# PLUS the enforcing flip only, nothing else: harvest stays 36 rules,
+# lunch userdebug, low-RAM, AudioFX/RealmeParts kept, vendor/apn pin
+# cfcbd9d... kept, baked upstream-duplicate check kept. build-org-v28
+# itself is untouched (md5 47c3316576346d132939fc4d650f1062).
+# (v30 history below; superseded by v31 above.)
+# User call 2026-11-04: "make it enforcing". The flip is the v16/v21
+# mechanism, unchanged: delete the BoardConfig line
+# 'BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive', then fail
+# fast if any androidboot.selinux= override remains. The v22 stage-1
+# fail-fast that REQUIRED the permissive line present is replaced by
+# this deletion + verification. SELINUX_IGNORE_NEVERALLOWS stays
+# := true (first enforcing attempt; removing it is the later hardening
+# step, only after an enforcing build proves clean).
+# HONEST CAVEAT: the setenforce 1 sweep on v28 was NOT run before this
+# flip, so the 36 rules are harvested but not functionally proven under
+# enforcing. The policy pre-check and legacy-permission gate do NOT prove
+# compatibility with the stock vendor policy, successful boot, or feature
+# coverage. A denial can break a feature; a combined-policy/init failure
+# can prevent boot. Run the stock-vendor CIL compatibility check below and
+# keep the v28 (permissive) boot.img as the TWRP escape hatch. If the new
+# system boots, capture denials before reboot; on userdebug, 'adb root;
+# setenforce 0' is a temporary diagnostic/rescue measure, not the fix.
+#
 # === build-org-v28-lowram-audiofx-dpmd-batch5keepers-apnpin: v27 + vendor/apn remove-project + baked upstream check ===
 # v28 = build-org-v27-lowram-audiofx-dpmd-batch5keepers-apnpin.sh verbatim
 # PLUS two changes, nothing else: harvest stays 36 rules, permissive stage-1,
@@ -1513,23 +1554,28 @@ if [ "$ALLOW_COUNT" -ne 36 ]; then
 fi
 echo "enforcing policy installed: $HARVEST_TE (36 allow statements, batches 1-4 minus 3 parked + v21 dpmd + v22 batch-5 keepers)."
 
-# v22 STAGE-1: KEEP the permissive flag -- do NOT delete it (v21 deleted
-# it). The org BoardConfig.mk adds it as its own line (BOARD_KERNEL_CMDLINE +=
-# androidboot.selinux=permissive). v22 must boot PERMISSIVE so the
-# setenforce 1 sweep can prove the 8 keepers without risking a boot
-# loop from an untested policy. Fail fast if the permissive line is
-# somehow already gone (that would mean this is not a stage-1 build).
-# SELINUX_IGNORE_NEVERALLOWS must still be := true (kept deliberately
-# for the first enforcing attempt; removing it is the later hardening step).
-if ! grep -q '^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$' "$BOARDCONFIG"; then
-  echo "ERROR: permissive cmdline line missing from $BOARDCONFIG -- v22 must boot permissive" >&2
+# v29 ENFORCING: remove the permissive flag from the kernel cmdline so
+# the build boots SELinux ENFORCING (user call 2026-11-04: "make it
+# enforcing"). The org BoardConfig.mk adds it as its own line
+# (BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive); delete that
+# line, then verify no selinux= override remains AND that
+# SELINUX_IGNORE_NEVERALLOWS is still := true (kept deliberately for
+# the first enforcing attempt; removing it is the later hardening step).
+# NOTE: the setenforce 1 sweep on v28 was NOT run before this flip, so
+# the 36 rules are harvested but not functionally proven under enforcing.
+# If a function is denied on first boot, capture the denial dump and it
+# lands in the next version -- keep the v28 (permissive) boot.img aside
+# as the TWRP escape hatch. Mechanism is the v16/v21 one, unchanged.
+sed -i '/^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$/d' "$BOARDCONFIG"
+if grep -q 'androidboot.selinux=' "$BOARDCONFIG"; then
+  echo "ERROR: an androidboot.selinux= override remains in $BOARDCONFIG" >&2
   exit 1
 fi
 if ! grep -q '^SELINUX_IGNORE_NEVERALLOWS := true$' "$BOARDCONFIG"; then
   echo "ERROR: SELINUX_IGNORE_NEVERALLOWS is no longer := true in $BOARDCONFIG" >&2
   exit 1
 fi
-echo "boot mode: SELinux PERMISSIVE (v22 stage-1 test build; enforcing flip held out)."
+echo "boot mode: SELinux ENFORCING (v31; first enforcing attempt, SELINUX_IGNORE_NEVERALLOWS still true)."
 # <<< V15 SELINUX SECTION <<<
 
 # USB PREFERENCES FIX (v14): apply the embedded Settings patch so the
@@ -1618,9 +1664,26 @@ source build/envsetup.sh
 # Build as userdebug (adb root for testing; the 2022 ROM was user, but
 # userdebug is strictly more useful for bring-up and costs nothing here).
 lunch lineage_RMX1805-userdebug
+
+# Verify the fully expanded build variables after product inheritance/lunch,
+# not just the one source line edited above. Reject SELinux mode overrides
+# in either the kernel command line or bootconfig; this build relies on the
+# Android default (enforcing) and must not silently inherit permissive mode.
+FINAL_BOARD_KERNEL_CMDLINE="$(get_build_var BOARD_KERNEL_CMDLINE)" || {
+  echo "ERROR: could not read expanded BOARD_KERNEL_CMDLINE" >&2; exit 1; }
+FINAL_BOARD_BOOTCONFIG="$(get_build_var BOARD_BOOTCONFIG 2>/dev/null || true)"
+if printf '%s\n%s\n' "$FINAL_BOARD_KERNEL_CMDLINE" "$FINAL_BOARD_BOOTCONFIG" | grep -Eq 'androidboot\.selinux='; then
+  echo "ERROR: expanded boot arguments still contain androidboot.selinux= override:" >&2
+  printf '%s\n%s\n' "$FINAL_BOARD_KERNEL_CMDLINE" "$FINAL_BOARD_BOOTCONFIG" >&2
+  exit 1
+fi
+echo "Expanded boot arguments contain no androidboot.selinux= override."
+echo "Expanded BOARD_KERNEL_CMDLINE: $FINAL_BOARD_KERNEL_CMDLINE"
+
 # v16 EARLY POLICY PRE-CHECK: compile only the policy modules (minutes).
 # An unknown type / bad macro in the harvest or wiring dies here, not after
-# the multi-hour image build. 'sepolicy' is the monolithic all-policy build.
+# the multi-hour image build. This is NOT the stock-vendor CIL compatibility
+# check; that separate pre-flash check remains mandatory below.
 mka plat_sepolicy.cil system_ext_sepolicy.cil sepolicy || {
   echo "ERROR: early pre-check failed -- this may be a soong bootstrap failure" >&2
   echo "  (e.g. an undefined module like pyyaml), NOT necessarily a policy" >&2
@@ -1795,20 +1858,65 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 ./build/tools/releasetools/sign_target_files_apks -o -p out/host/linux-x86 -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
+# Inspect the boot.img that is actually inside the signed OTA. The source
+# BoardConfig and expanded make variables can be correct while the final
+# artifact is stale or packaged differently; fail unless the OTA contains
+# a readable boot image whose header command line has no SELinux override.
+BOOT_CHECK_DIR="$PWD/.selinux_bootimg_check"
+rm -rf "$BOOT_CHECK_DIR"
+mkdir -p "$BOOT_CHECK_DIR/unpacked"
+SIGNED_BOOT_IMG="$BOOT_CHECK_DIR/boot.img"
+unzip -p "$SIGNED_OTA" boot.img > "$SIGNED_BOOT_IMG" || {
+  echo "ERROR: boot.img missing/unreadable in signed OTA: $SIGNED_OTA" >&2; exit 1; }
+[[ -s "$SIGNED_BOOT_IMG" ]] || {
+  echo "ERROR: extracted boot.img is empty" >&2; exit 1; }
+UNPACK_BOOTIMG="out/host/linux-x86/bin/unpack_bootimg"
+if [[ ! -x "$UNPACK_BOOTIMG" ]]; then
+  UNPACK_BOOTIMG="$(find out/host -type f -name unpack_bootimg -perm -u+x 2>/dev/null | head -n1)"
+fi
+[[ -n "$UNPACK_BOOTIMG" && -x "$UNPACK_BOOTIMG" ]] || {
+  echo "ERROR: unpack_bootimg not found; cannot verify signed boot.img cmdline" >&2; exit 1; }
+if ! BOOT_HEADER_INFO="$("$UNPACK_BOOTIMG" --boot_img "$SIGNED_BOOT_IMG" --out "$BOOT_CHECK_DIR/unpacked" 2>&1)"; then
+  echo "ERROR: could not unpack signed boot.img:" >&2
+  printf '%s\n' "$BOOT_HEADER_INFO" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$BOOT_HEADER_INFO" | grep -Eiq '(cmdline|command line):'; then
+  echo "ERROR: unpack_bootimg output did not expose the boot command line; refusing to assume enforcing:" >&2
+  printf '%s\n' "$BOOT_HEADER_INFO" >&2
+  exit 1
+fi
+if printf '%s\n' "$BOOT_HEADER_INFO" | grep -Eq 'androidboot\.selinux='; then
+  echo "ERROR: signed OTA boot.img still contains an androidboot.selinux= override:" >&2
+  printf '%s\n' "$BOOT_HEADER_INFO" >&2
+  exit 1
+fi
+echo "Signed OTA boot.img verified: no androidboot.selinux= override in its header."
+
 echo "Signed ROM ready: $SIGNED_OTA"
-echo "This build PASSED the in-build SELinux gate (see above) — the compiler"
-echo "fix is verified inside this ROM. BEFORE FLASHING run the exact-argv secilc bench compile against the STOCK vendor CIL (v16 adds system_ext rules the gate cannot check against it)."
+echo "The build policy compiled and the legacy-permission gate passed; this does NOT validate the complete stock-vendor policy."
+echo "MANDATORY BEFORE FLASHING: run the exact-argv secilc compatibility check against the STOCK vendor CIL (the in-build gate does not include that vendor policy)."
 echo "Flash plan (system+boot ONLY, stock vendor stays untouched):"
 echo "  1. Unzip boot.img and system.img from $SIGNED_OTA."
 echo "  2. TWRP > Install > Install Image: flash boot.img to Boot, then system.img to System Image."
 echo "     Do NOT install the full zip and do NOT flash the built vendor.img"
 echo "     (the org-built vendor has no camera stack - flashing it kills the camera)."
-echo "  3. Coming from the v1 install (same ROM, same keys): no factory reset"
-echo "     needed. Reboot. First-boot checks: WiFi/BT, IMEI, camera, backlight slider,"
- echo "     display density 360, USB Preferences: list selectable, controlled-by hidden."
+echo "  3. If upgrading the same ROM signed with the same keys, a factory reset"
+echo "     is not expected; keep a recovery/backup available. After first boot run:"
+echo "       adb shell getenforce                 # MUST print Enforcing"
+echo "       adb shell cat /proc/cmdline          # no permissive override"
+echo "       adb logcat -b all -d | grep -i 'avc: denied'"
+echo "     Then test WiFi/BT, IMEI, camera, backlight slider, density 360, USB"
+echo "     Preferences, charger mode, and call/SMS paths. Capture denial logs"
+echo "     before reboot; do not treat untested features as proven clean."
 echo "     Low-RAM checks: getprop ro.config.low_ram (=true), cat /proc/swaps +"
  echo "     /sys/block/zram0/disksize (zram up, ~50% of RAM), dex2oat threads =4."
  echo "     AudioFX check (v19): AudioFX app should appear in the app drawer"
  echo "     (it was removed by RemovePackages in v14-v18). If it does not"
  echo "     appear, the Lineage base does not include it on its own and a"
  echo "     follow-up version must add it explicitly -- do not re-add the override." 
+
+# HARDENING STATUS: SELINUX_IGNORE_NEVERALLOWS remains := true for this
+# first enforcing attempt by design. This is not permissive mode, but it
+# suppresses neverallow build checks; do not call this fully hardened until
+# the policy is reviewed, those checks are restored, and enforcing tests pass.
