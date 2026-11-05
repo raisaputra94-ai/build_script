@@ -1,6 +1,7 @@
-# === build-org-v30-lowram-audiofx-dpmd-batch5-product-cil-stagedselinux: v29 + full batch-5 policy, staged SELinux ===
-# v30 = build-org-v29-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing.sh
-# PLUS the changes below. Everything else (low-RAM, AudioFX/RealmeParts, the
+# === build-org-v30b-lowram-audiofx-dpmd-batch5-product-cil-stagedselinux: v29 + full batch-5 policy, staged SELinux ===
+# v30b = build-org-v29-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing.sh
+# PLUS the changes below. (v30b replaces the first v30 draft, whose CIL gate compiled against the
+# org-built VENDOR/ in the target files; that vendor is not flashed and lacks the stock-only types.) Everything else (low-RAM, AudioFX/RealmeParts, the
 # vendor/apn pin, the baked upstream-duplicate check, USB Settings patch,
 # signing, flash plan) is v29 verbatim. QUEUE THIS FILE, NOT v29.
 #
@@ -40,10 +41,16 @@
 #         missing rule cannot take down USB/adb, the modem or charging.
 #         Remove those lines one at a time later.
 # (4) GATE: after the build, the target files must contain our
-#     product_sepolicy.cil; and when the target files also carry the vendor
-#     cil, plat + mapping + system_ext + vendor + ours are compiled with the
-#     exact on-device secilc flags. Fails only if the baseline compiles and ours
-#     does not (so a gate-input problem cannot block a good build).
+#     product_sepolicy.cil; and our file is compiled with the build's real
+#     plat + mapping + system_ext and the STOCK vendor policy (the vendor the
+#     phone actually runs), using the on-device secilc flags. Stock vendor files
+#     come from $STOCK_VENDOR_SELINUX_DIR if set (best: adb pull
+#     /vendor/etc/selinux from the phone), else are fetched from the dump repo
+#     (RandomDumpYard/RMX1805_DUMP, override with STOCK_VENDOR_SELINUX_URL).
+#     If neither is available the compile is skipped with a WARN. It fails only
+#     when the baseline (plat + stock vendor) compiles and ours does not, so a
+#     gate-input problem cannot block a good build. The org-built VENDOR/ in the
+#     target files is never used: it is not flashed and lacks stock-only types.
 # NOT DONE / UNPROVEN: the CIL was compile-tested against the stock Android 9
 # plat + stock vendor cil (exit 0; a bad rule fails), not against Android 11
 # plat until this gate runs. Nothing here has booted. SELINUX_IGNORE_NEVERALLOWS
@@ -1964,9 +1971,9 @@ if ! "$HOST_SECILC" "${GATE_ARGS[@]}"; then
 echo "produced. DO NOT FLASH." >&2
   exit 1
 fi
-# v30 CIL GATE: our product_sepolicy.cil must be in the image, and it must
-# compile together with the real plat + system_ext + vendor cil using the
-# on-device secilc flags.
+# v30b CIL GATE: our product_sepolicy.cil must be in the image, and it must
+# compile with the build's plat + system_ext and the STOCK vendor policy (the
+# org-built VENDOR/ in the target files is not flashed and lacks stock-only types).
 PROD_CIL="$(find "$GATE_DIR" -path '*etc/selinux/product_sepolicy.cil' 2>/dev/null | head -n1)"
 if [[ -z "$PROD_CIL" ]]; then
   echo "ERROR: product_sepolicy.cil is not in the target files (copy rule not effective?)" >&2
@@ -1975,34 +1982,46 @@ if [[ -z "$PROD_CIL" ]]; then
 fi
 grep -q 'RMX1805 vendor-only types marker' "$PROD_CIL" || {
   echo "ERROR: $PROD_CIL in the target files is not our file" >&2; exit 1; }
-VEND_DIR="$GATE_DIR/VENDOR/etc/selinux"
-if [[ -f "$VEND_DIR/vendor_sepolicy.cil" && -f "$VEND_DIR/plat_pub_versioned.cil" ]]; then
-  VERS=""
-  if [[ -f "$VEND_DIR/plat_sepolicy_vers.txt" ]]; then VERS="$(tr -d '\n' < "$VEND_DIR/plat_sepolicy_vers.txt")"; fi
+STOCK_DIR=""
+if [[ -n "${STOCK_VENDOR_SELINUX_DIR:-}" && -f "$STOCK_VENDOR_SELINUX_DIR/vendor_sepolicy.cil" && -f "$STOCK_VENDOR_SELINUX_DIR/plat_pub_versioned.cil" ]]; then
+  STOCK_DIR="$STOCK_VENDOR_SELINUX_DIR"
+  echo "CIL gate: using stock vendor policy from $STOCK_DIR"
+else
+  STOCK_BASE="${STOCK_VENDOR_SELINUX_URL:-https://raw.githubusercontent.com/RandomDumpYard/RMX1805_DUMP/RMX1805_11_A.71_201120/vendor/etc/selinux}"
+  mkdir -p "$GATE_DIR/stock_vendor"
+  if command -v curl >/dev/null 2>&1      && curl -fsSL -m 120 "$STOCK_BASE/vendor_sepolicy.cil" -o "$GATE_DIR/stock_vendor/vendor_sepolicy.cil"      && curl -fsSL -m 120 "$STOCK_BASE/plat_pub_versioned.cil" -o "$GATE_DIR/stock_vendor/plat_pub_versioned.cil"      && [[ -s "$GATE_DIR/stock_vendor/vendor_sepolicy.cil" && -s "$GATE_DIR/stock_vendor/plat_pub_versioned.cil" ]]; then
+    STOCK_DIR="$GATE_DIR/stock_vendor"
+    echo "CIL gate: using stock vendor policy fetched from $STOCK_BASE"
+  fi
+  curl -fsSL -m 60 "$STOCK_BASE/plat_sepolicy_vers.txt" -o "$GATE_DIR/stock_vendor/plat_sepolicy_vers.txt" 2>/dev/null || true
+fi
+if [[ -n "$STOCK_DIR" ]]; then
+  VERS="28.0"
+  if [[ -s "$STOCK_DIR/plat_sepolicy_vers.txt" ]]; then VERS="$(tr -d '[:space:]' < "$STOCK_DIR/plat_sepolicy_vers.txt")"; fi
   CIL_ARGS=("$SE_DIR/plat_sepolicy.cil" -m -M true -G -N -c 30)
-  if [[ -n "$VERS" && -f "$SE_DIR/mapping/$VERS.cil" ]]; then CIL_ARGS+=("$SE_DIR/mapping/$VERS.cil"); fi
-  if [[ -n "$VERS" && -f "$SE_DIR/mapping/$VERS.compat.cil" ]]; then CIL_ARGS+=("$SE_DIR/mapping/$VERS.compat.cil"); fi
+  if [[ -f "$SE_DIR/mapping/$VERS.cil" ]]; then CIL_ARGS+=("$SE_DIR/mapping/$VERS.cil"); fi
+  if [[ -f "$SE_DIR/mapping/$VERS.compat.cil" ]]; then CIL_ARGS+=("$SE_DIR/mapping/$VERS.compat.cil"); fi
   SYSEXT_CIL="$(find "$GATE_DIR" -name system_ext_sepolicy.cil 2>/dev/null | head -n1)"
   if [[ -n "$SYSEXT_CIL" ]]; then
     CIL_ARGS+=("$SYSEXT_CIL")
     SYSEXT_MAP="$(dirname "$SYSEXT_CIL")/mapping/$VERS.cil"
-    if [[ -n "$VERS" && -f "$SYSEXT_MAP" ]]; then CIL_ARGS+=("$SYSEXT_MAP"); fi
+    if [[ -f "$SYSEXT_MAP" ]]; then CIL_ARGS+=("$SYSEXT_MAP"); fi
   fi
-  CIL_ARGS+=("$VEND_DIR/plat_pub_versioned.cil" "$VEND_DIR/vendor_sepolicy.cil")
+  CIL_ARGS+=("$STOCK_DIR/plat_pub_versioned.cil" "$STOCK_DIR/vendor_sepolicy.cil")
   if "$HOST_SECILC" "${CIL_ARGS[@]}" -o "$GATE_DIR/base.out" -f "$GATE_DIR/fc_null" >/dev/null 2>&1; then
     if "$HOST_SECILC" "${CIL_ARGS[@]}" "$PROD_CIL" -o "$GATE_DIR/full.out" -f "$GATE_DIR/fc_null"; then
-      echo "CIL GATE PASSED: product_sepolicy.cil compiles with this build's plat + system_ext + vendor policy."
+      echo "CIL GATE PASSED: product_sepolicy.cil compiles with this build's plat + system_ext and the STOCK vendor policy."
     else
-      echo "ERROR: CIL GATE FAILED: product_sepolicy.cil does not compile against this build's policy." >&2
+      echo "ERROR: CIL GATE FAILED: product_sepolicy.cil does not compile against this build's policy + the stock vendor." >&2
       echo "The phone's boot-time policy compile would fail. NO signed zip was produced. DO NOT FLASH." >&2
       exit 1
     fi
   else
-    echo "WARN: CIL gate skipped: the plat + vendor baseline did not compile with the gate's argument set." >&2
+    echo "WARN: CIL gate skipped: this build's plat + mapping + stock vendor baseline did not compile with the gate's argument set." >&2
     echo "      (gate input problem, not proof that product_sepolicy.cil is bad.) Test it with SELINUX_MODE=permissive first." >&2
   fi
 else
-  echo "WARN: CIL gate skipped: vendor_sepolicy.cil / plat_pub_versioned.cil are not in the target files." >&2
+  echo "WARN: CIL gate skipped: no stock vendor policy available (set STOCK_VENDOR_SELINUX_DIR or allow network access)." >&2
   echo "      product_sepolicy.cil is in the image but its vendor type names are unchecked. Test with SELINUX_MODE=permissive first." >&2
 fi
 rm -rf "$GATE_DIR"
@@ -2071,6 +2090,12 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # build/make/tools, so realpath() resolves to the wrong tree and signapk.jar
 # is not found there. The jar lives in the host out dir.
 ./build/tools/releasetools/sign_target_files_apks -o -p out/host/linux-x86 -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
+# v30b: the signed target files (what the OTA and system.img are built from)
+# must still carry our CIL. The file inside the finished system.img is not
+# inspected here; on the phone: adb shell ls -l /product/etc/selinux/product_sepolicy.cil
+unzip -l "$SIGNED_TF" | grep -q 'etc/selinux/product_sepolicy.cil' || {
+  echo "ERROR: product_sepolicy.cil is missing from the signed target files" >&2; exit 1; }
+echo "signed target files carry product_sepolicy.cil."
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
 echo "Signed ROM ready: $SIGNED_OTA"
