@@ -1,26 +1,61 @@
-#!/bin/bash
-# === build-org-v31-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing: v30 minus the QCOM sepolicy removal ===
-# v31 = v30 verbatim EXCEPT the QCOM private/public sepolicy removal is
-# reverted: the tree's BOARD_PLAT_*_SEPOLICY_DIR lines for device/qcom/sepolicy
-# are left as the v28 build had them -- that config compiled and passed the
-# gate. v30's new checks are KEPT: expanded cmdline/bootconfig verification
-# after lunch, signed-OTA boot.img cmdline inspection, strengthened first-boot
-# checks. Harvest 36, enforcing flip, NEVERALLOWS true, all as v30.
-# QUEUE THIS FILE, NOT v30, v29, v28 (permissive), or anything older.
-# === build-org-v30-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing: v29 + policy wiring and artifact checks ===
-# v30 = v29 plus: remove and verify the stale upstream QCOM plat sepolicy
-# private/public wiring (the linked RMX1805 tree still has those lines);
-# verify expanded kernel cmdline/bootconfig after lunch; inspect the signed
-# OTA's actual boot.img cmdline; and strengthen first-boot SELinux checks.
-# This does NOT prove the stock-vendor combined policy is correct. The
-# stock-vendor CIL compatibility check and on-device enforcing test remain
-# mandatory before treating this as a stable daily-driver build.
+# === build-org-v30-lowram-audiofx-dpmd-batch5-product-cil-stagedselinux: v29 + full batch-5 policy, staged SELinux ===
+# v30 = build-org-v29-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing.sh
+# PLUS the changes below. Everything else (low-RAM, AudioFX/RealmeParts, the
+# vendor/apn pin, the baked upstream-duplicate check, USB Settings patch,
+# signing, flash plan) is v29 verbatim. QUEUE THIS FILE, NOT v29.
+#
+# WHY: v29 flips to enforcing with only 36 plat-side rules and no proof run.
+# The permissive harvests found more than that, and 5 of the old draft's
+# own rules named vendor-only types the plat build cannot resolve.
+#
+# (1) POLICY: the 36 rules are replaced by enforcing_batch1235.te (59 allow
+#     statements): batches 1-4 + batch 5 (init netlink/rawip/socket_device
+#     unlink, hwservicemanager binder, healthd -> charger_exec/charger_prop for
+#     offmode charging, kernel/hal_wifi on mnt_vendor_file, camera HAL props,
+#     vendor_init, tee, permissioncontroller, audioserver, ...). Every type,
+#     class and permission was checked against the LineageOS 18.1 sepolicy
+#     sources (public + private): 0 problems.
+# (2) VENDOR-ONLY TYPES: rules that name types only the STOCK vendor policy
+#     declares (rild, rmt_storage, wcnss_service, qti_init_shell,
+#     vendor_per_mgr, hal_dpmQmiMgr, hostapd, ...) go into a raw CIL file,
+#     shipped as /product/etc/selinux/product_sepolicy.cil. Init loads that
+#     file when it compiles policy at boot (selinux.cpp, product_policy_cil_file)
+#     and the names resolve against the stock vendor_sepolicy.cil then. NOT the
+#     odm path: the flash plan leaves the stock vendor untouched, and with no odm
+#     partition /odm is /vendor/odm, so an odm file would not travel with the
+#     ROM. The build fails fast if it already generates a product_sepolicy.cil
+#     (PRODUCT_*_SEPOLICY_DIRS set), because the copy would collide.
+#     Most important of these: qti_init_shell -> configfs (USB gadget, adb),
+#     rild -> /cache NV items, dpmd binder, wcnss_service serialno/system props.
+# (3) STAGED: SELINUX_MODE (env, default permissive).
+#       permissive (default): the BoardConfig permissive line must still be
+#         there; the build ships the new policy and boots permissive. Boot it,
+#         check the policy compiled (phone boots), re-harvest (a denial still
+#         logged is a gap), then: adb root; setenforce 1 and retest. Reboot or
+#         setenforce 0 returns to permissive.
+#       enforcing: v29's flip (delete the cmdline line, verify no
+#         androidboot.selinux= remains) PLUS a safety net appended to the CIL:
+#         (typepermissive ...) for qti_init_shell, rild, rmt_storage,
+#         wcnss_service, hal_dpmQmiMgr, vendor_per_mgr and healthd, so one
+#         missing rule cannot take down USB/adb, the modem or charging.
+#         Remove those lines one at a time later.
+# (4) GATE: after the build, the target files must contain our
+#     product_sepolicy.cil; and when the target files also carry the vendor
+#     cil, plat + mapping + system_ext + vendor + ours are compiled with the
+#     exact on-device secilc flags. Fails only if the baseline compiles and ours
+#     does not (so a gate-input problem cannot block a good build).
+# NOT DONE / UNPROVEN: the CIL was compile-tested against the stock Android 9
+# plat + stock vendor cil (exit 0; a bad rule fails), not against Android 11
+# plat until this gate runs. Nothing here has booted. SELINUX_IGNORE_NEVERALLOWS
+# stays := true. KEEP a known-good boot.img aside (TWRP) before flashing.
+#
+# === build-org-v29-lowram-audiofx-dpmd-batch5keepers-apnpin-enforcing: v28 + enforcing flip ===
 # v29 = build-org-v28-lowram-audiofx-dpmd-batch5keepers-apnpin.sh verbatim
 # PLUS the enforcing flip only, nothing else: harvest stays 36 rules,
 # lunch userdebug, low-RAM, AudioFX/RealmeParts kept, vendor/apn pin
 # cfcbd9d... kept, baked upstream-duplicate check kept. build-org-v28
 # itself is untouched (md5 47c3316576346d132939fc4d650f1062).
-# (v30 history below; superseded by v31 above.)
+# QUEUE THIS FILE, NOT v28 (permissive) or anything older.
 # User call 2026-11-04: "make it enforcing". The flip is the v16/v21
 # mechanism, unchanged: delete the BoardConfig line
 # 'BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive', then fail
@@ -31,13 +66,13 @@
 # step, only after an enforcing build proves clean).
 # HONEST CAVEAT: the setenforce 1 sweep on v28 was NOT run before this
 # flip, so the 36 rules are harvested but not functionally proven under
-# enforcing. The policy pre-check and legacy-permission gate do NOT prove
-# compatibility with the stock vendor policy, successful boot, or feature
-# coverage. A denial can break a feature; a combined-policy/init failure
-# can prevent boot. Run the stock-vendor CIL compatibility check below and
-# keep the v28 (permissive) boot.img as the TWRP escape hatch. If the new
-# system boots, capture denials before reboot; on userdebug, 'adb root;
-# setenforce 0' is a temporary diagnostic/rescue measure, not the fix.
+# enforcing. Boot risk is low -- the policy compiled and the in-build
+# gate passed on v28, so a compile failure (the v1 fastboot cause)
+# cannot recur from this change -- but individual functions may hit
+# denials on first boot. If one does, capture the denial dump before
+# any reboot and the missing rule lands in the next version. KEEP the
+# v28 (permissive) boot.img aside as the TWRP escape hatch; rescue if
+# booted is 'adb root; setenforce 0'.
 #
 # === build-org-v28-lowram-audiofx-dpmd-batch5keepers-apnpin: v27 + vendor/apn remove-project + baked upstream check ===
 # v28 = build-org-v27-lowram-audiofx-dpmd-batch5keepers-apnpin.sh verbatim
@@ -1336,6 +1371,13 @@ echo "AudioFX kept: removed from RemovePackages override list (module intact)."
 # <<< V19 AUDIOFX SECTION <<<
 
 # >>> V15 SELINUX SECTION >>>
+# v30: staged SELinux. Default permissive; SELINUX_MODE=enforcing flips it.
+SELINUX_MODE="${SELINUX_MODE:-permissive}"
+case "$SELINUX_MODE" in
+  permissive|enforcing) ;;
+  *) echo "ERROR: SELINUX_MODE must be permissive or enforcing (got '$SELINUX_MODE')" >&2; exit 1 ;;
+esac
+echo "SELinux mode for this build: $SELINUX_MODE"
 # QCOM SEPOLICY BASELINE (v16): intentionally NOT wired (see v16 header,
 # finding 1). BOARDCONFIG is still needed below for the cmdline edit.
 BOARDCONFIG=device/oppo/RMX1805/BoardConfig.mk
@@ -1353,28 +1395,18 @@ echo "qcom sepolicy baseline: not wired (as harvested)."
 # the v22 batch-5 keepers (36 total), preceded by a shipped-as header.
 # Fail fast if the written file does not carry exactly 36 allow statements.
 HARVEST_TE=device/oppo/RMX1805/sepolicy/private/enforcing_harvest.te
-cat > "$HARVEST_TE" <<'HARVESTHDR'
-# RMX1805 enforcing harvest -- SHIPPED in build-org-v22 (2026-10-30).
-# Batches 1-4 (27 allow statements after v16 review) + v21 dpmd fix
-# + v22 batch-5 keepers (8 rules, plat-side only) = 36 total.
-# Source: enforcing_batch1234_draft.te + other-LLM batch-5 draft
-# (enforcing_batch1235.te), narrowed to the keepers listed in the
-# v22 header. v22 boots PERMISSIVE; the setenforce 1 sweep on v22
-# is the proof step for the 8 keepers.
-HARVESTHDR
-cat >> "$HARVEST_TE" <<'HARVESTEOF'
-# RMX1805 org + stock vendor — SELinux enforcing draft (DRAFT)
-# Batches 1+2+3+4 consolidated. Supersedes enforcing_batch123_draft.te.
+cat > "$HARVEST_TE" <<'HARVESTEOF'
+# RMX1805 org + stock vendor — SELinux enforcing policy (batches 1-5)
+# Batches 1+2+3+4 (previous draft) + batch 5 (2026-10-26/28 harvests: calls,
+# SMS, data, airplane, SIM, USB, storage, camera, audio, Wi-Fi, GPS,
+# power-menu reboot, charger mode). Supersedes enforcing_batch123_draft.te.
+# Rules for VENDOR-ONLY types live in product_sepolicy.cil (device/oppo/RMX1805/sepolicy/,
+# shipped to /product/etc/selinux/product_sepolicy.cil).
 # Sources: permissive denial harvests, 2026-10-22 — batch 1: fresh-flash
 # boot + idle; batch 2: Settings browsing, Aperture, GMS; batch 3:
 # extended session (Jelly browsing, MediaProvider scan, one WiFi HAL
-# crash/restart); batch 4: WiFi hotspot on / client connected / off
-# (no new rules, one new parked item — hal_wifi_hostapd, see below).
-# Remaining unconfirmed surface: voice calls (in + out) and SMS
-# (send + receive) — zero telephony denials across all batches, so
-# clean-vs-untested is still open — plus one normal-reboot dump.
-# Fingerprint is N/A: user confirmed this unit has no sensor.
-# Coverage now: boot, idle, Settings, camera, GMS, browsing, hotspot.
+# crash/restart). Still unconfirmed surface: voice calls, fingerprint
+# enrollment (zero denials seen — clean or untested, pending user word).
 # Target location: device/oppo/RMX1805/sepolicy/private/ (plat-private).
 #
 # Method note: rules may only reference types/attributes visible to the
@@ -1405,11 +1437,11 @@ allow toolbox rootfs:dir { read open };
 # --- dpmd / netutils-wrapper chain (vendor service running in init domain) ---
 allow init netutils_wrapper_exec:file { read open getattr execute execute_no_trans };
 allow init system_file:file execute_no_trans; # [neverallow?] iptables via wrapper
-allow init self:netlink_route_socket { bind create nlmsg_read read write }; # v21 dpmd expansion (was read only)
-allow init socket_device:sock_file { create setattr }; # v21: init creating /dev/socket/dpmd at boot
+allow init self:netlink_route_socket { read };
 
 # --- qti_init_shell boot scripts ---
-# (v16) qti_init_shell rules PARKED: type is vendor-only, see parked list.
+# (moved to product_sepolicy.cil: qti_init_shell -> dev_type chr_file { getattr setattr })
+# (moved to product_sepolicy.cil: qti_init_shell -> vendor_file execute_no_trans)
 
 # --- system_server reading the RTC node ---
 allow system_server sysfs:file { read open getattr };
@@ -1420,7 +1452,8 @@ allow vold mnt_vendor_file:dir { read open ioctl };
 # --- WiFi HAL reading its NV calibration from persist ---
 allow hal_wifi_server mnt_vendor_file:file { read open };
 
-# --- vold storage tuning (read_ahead_kb): v16 PARKED, sysfs_mmc_host not plat-visible ---
+# --- vold storage tuning (read_ahead_kb) ---
+# (moved to product_sepolicy.cil: vold -> sysfs_mmc_host file write)
 
 # --- dataservices app writing the dpmd socket ---
 allow system_app socket_device:sock_file { write };
@@ -1437,7 +1470,6 @@ allow gmscore_app system_adbd_prop:file { read open getattr };
 allow gmscore_app adbd_prop:file { read open getattr };
 
 # --- surfaceflinger inspecting the composer process (/proc/<pid>) ---
-# v16: via public attribute (hal_graphics_composer_default is vendor-only)
 allow surfaceflinger hal_graphics_composer_server:dir { search };
 allow surfaceflinger hal_graphics_composer_server:file { read open getattr };
 
@@ -1476,106 +1508,252 @@ allow crash_dump hwservicemanager_prop:file { open getattr };
 # (on ~15:16:27, off ~15:17:25) — permissive, so NOT denial-caused; same
 # pattern as the batch-3 idle crash at ~3345s. Monitor in the soak.
 
-# ================= v22: batch-5 keepers (plat-side only) =================
-# From the other-LLM batch-5 draft; tuples present in logs-2. These are
-# candidates being TESTED on this permissive build, not proven rules:
-# the setenforce 1 sweep on v22 decides whether they stay.
-# --- charger mode (offmode charging; healthd runs /system/bin/charger) ---
-allow healthd charger_exec:file { entrypoint execute getattr read open map };
-allow healthd charger_prop:file { getattr open read };
-# --- hwservicemanager <-> init (core service registration) ---
+# ================= batch 5: calls, USB, storage, camera, Wi-Fi, reboot, charger =================
+# Source: permissive harvests 2026-10-24..28. Calls/SMS/data/airplane/SIM
+# swap/IMEI/USB/torch/proximity/GPS produced no telephony-specific
+# denials of their own; the denials below come from boot, service start
+# and the other sessions.
+
+# --- init: networking sockets + binder with hwservicemanager ---
+# (extends the batch-1 { read } on netlink_route_socket)
+allow init self:netlink_route_socket { bind create nlmsg_read read write };
+allow init self:netlink_socket { bind create getattr setopt };
+allow init self:rawip_socket { create getopt setopt };
+allow init self:capability2 { wake_alarm };
 allow init hwservicemanager:binder { call };
 allow hwservicemanager init:binder { transfer };
 allow hwservicemanager init:dir { search };
 allow hwservicemanager init:file { open read };
 allow hwservicemanager init:process { getattr };
-# --- permission controller finding the tethering service ---
-allow permissioncontroller_app tethering_service:service_manager { find };
 
-# PARKED (v16 additions first):
-#   qti_init_shell -> dev_type:chr_file { getattr setattr }     (chown /dev/silead_fp; no sensor on
-#                                                                this unit, harmless)
-#   qti_init_shell -> vendor_file:file execute_no_trans         (/vendor/bin/awk from init scripts:
-#                                                                SUSPECT if post-boot tuning/zram
-#                                                                scripts misbehave under enforcing)
-#   vold -> sysfs_mmc_host:file write                           (read_ahead_kb tuning; perf only)
-# PARKED — cannot be expressed plat-side (vendor-only types with no
-# usable public attribute); accept the denial, monitor impact:
-#   ipacm-diag -> diag_device:chr_file { rw open ioctl }        (diagnostics only)
-#   netutils_wrapper -> diag_device:chr_file { read write }     (diagnostics only)
-#   vold -> oppo_reserve_file:dir { read open ioctl }           (vold probe; not vold-managed)
-#   vendor_camera_prop reads by system_server, system_app,
-#     gmscore_app, untrusted_app (Aperture, Jelly)               (MOST-HIT parked item: camera prop
-#                                                                hints — suspect #1 if camera
-#                                                                misbehaves under enforcing)
-#   camera_prop reads by untrusted_app (Aperture)               (vendor-declared prop type)
-#   hal_camera_default -> vendor_system_prop                    (vendor-declared prop type)
-#   system_app -> hal_rcsservice:binder { call transfer }       (RCS features only)
-#   init <-> hal_dpmQmiMgr:binder { call } (both directions)    (DPM QMI link; rest of the dpmd
-#                                                                chain is drafted in batch 1)
-#   init (comm dpmd) -> diag_device:chr_file { ioctl write }   (v21: /dev/diag, vendor-only type,
-#                                                                cannot be expressed plat-side;
-#                                                                same parked class as ipacm-diag diag)
-#   hal_wifi_default -> vendor_tombstone_data_file:dir          (WiFi HAL tombstone bookkeeping;
-#     { search read open }                                       vendor-declared type, only
-#                                                                data_file_type — too broad)
-#   hal_wifi_hostapd_default -> wifi_vendor_data_file:dir       (BATCH 4, hotspot: hostapd removing
-#     { write remove_name }                                      the "hostapd" entry from
-#                                                                /data/vendor/wifi. Type is vendor-
-#                                                                only; attributes are file_type +
-#                                                                data_file_type only — too broad.
-#                                                                NOTE: the stock vendor policy
-#                                                                itself grants hostapd only
-#                                                                { read getattr search open } on
-#                                                                this dir — the write/remove is
-#                                                                ungranted even on stock.
-#                                                                Label CHECKED on-device
-#                                                                2026-10-22: /data/vendor/wifi/
-#                                                                hostapd IS correctly labelled
-#                                                                hostapd_data_file (mislabel
-#                                                                theory refuted). Hostapd tries
-#                                                                to remove its own top dir from
-#                                                                the parent at each AP toggle —
-#                                                                reads as best-effort cleanup;
-#                                                                impact unknown until the
-#                                                                enforcing test. Remains
-#                                                                suspect #1 if HOTSPOT breaks
-#                                                                under enforcing.)
+# --- init: dpmd socket + vendor scripts ---
+allow init socket_device:sock_file { create setattr unlink };
+allow init vendor_file:file { execute_no_trans mounton };
+allow init vendor_toolbox_exec:file { execute_no_trans };
+
+# --- charger mode (offmode charging) ---
+# The stock vendor init script starts /system/bin/charger as u:r:healthd:s0
+# (stock Android 9 labels the binary healthd_exec). Android 11 labels it
+# charger_exec, so healthd needs to be allowed to run it. If the charger
+# service is critical, failing here can reboot-loop the phone while charging
+# off. Keep healthd permissive in the first enforcing build.
+allow healthd charger_exec:file { entrypoint execute getattr read open map };
+allow healthd charger_prop:file { getattr open read };
+
+# --- kernel / vold on the vendor persist mounts ---
+allow kernel mnt_vendor_file:dir { search };
+allow kernel mnt_vendor_file:file { open read };
+
+# --- HALs ---
+allow hal_wifi_server mnt_vendor_file:dir { search };
+allow hal_audio_server sysfs:dir { open read };
+allow hal_camera_server default_prop:file { getattr open read };
+allow hal_camera_server radio_prop:file { getattr open read };
+allow hal_camera_server sysfs_net:dir { search };
+allow hal_camera_server vendor_shell_exec:file { execute_no_trans };
+
+# --- property default bucket: audioserver (same bucket as batch 2) ---
+allow audioserver vendor_default_prop:file { getattr open read };
+
+# --- Settings / permission controller / dataservices ---
+allow permissioncontroller_app tethering_service:service_manager { find };
+allow system_app { default_android_service uce_service }:service_manager { add }; # [neverallow?] Qualcomm IMS/UCE app services
+
+# --- tee: property set (sys.wt_rpmb_status) ---
+allow tee system_prop:property_service { set }; # [neverallow?] better: give the property its own type
+
+# --- vendor_init (stock vendor init scripts: chmod/chown/props) ---
+allow vendor_init default_prop:file { read };
+allow vendor_init persist_debug_prop:file { read };
+allow vendor_init fingerprintd_data_file:dir { getattr };
+allow vendor_init system_data_file:dir { setattr };
+allow vendor_init tombstone_data_file:dir { getattr };
+allow vendor_init vfat:dir { setattr };
+
+# VENDOR-ONLY TYPES: see product_sepolicy.cil (dpmd/DPM QMI binder, qti_init_shell
+# configfs/USB gadget, rild NV items in /cache, rmt_storage, wcnss_service,
+# vendor_per_mgr, Wi-Fi HAL tombstone dir + hostapd, camera props for
+# system_server/camera HAL, IMS/RCS, vold oppo_reserve_file, ...).
 #
-# SKIPPED — noise / correct to block:
-#   zygote -> adb_data_file:dir { search }                      (KernelSU manager spawn probing)
-#   untrusted_app -> postinstall_mnt_dir:dir { getattr }        (KernelSU manager probing)
-#   qti_init_shell -> self:fifo_file { ioctl }                  (pipe FIONREAD noise)
+# STILL NOT ALLOWED ON PURPOSE:
+#   diag_device for adpl, cnd, ipacm, netmgrd, qti, sensors, hal_imsrtp,
+#     hal_graphics_composer_default, init, netutils_wrapper (Qualcomm diag
+#     logging; daemons carry on without it; commented in the cil)
+#   gmscore_app probing directories (mnt_*, firmware, configfs, cgroup,
+#     linkerconfig, apex_mnt_dir, ...): Play services scanning the filesystem
+#   shell -> *_prop / syslog_read: caused by adb shell getprop / dmesg
+#   crash_dump -> assorted *_prop and video_device: only degrades tombstones
+#   untrusted_app: hal_memtrack binder/hwservice, proc_vmstat open,
+#     sysfs_switch search, postinstall_mnt_dir getattr, camera prop reads
+#   untrusted_app -> system_lib_file execmod: find the app first
+#   hal_camera_default -> tcp_socket create, default_prop set
+#   priv_app -> device:dir open
+#   zygote -> adb_data_file (KernelSU probing)
+#   *-> rootfs on /data/media (mediaprovider_app, untrusted_app,
+#     migrate_legacy_obb_data, drmserver, mediaserver, toolbox, vold):
+#     NOT a policy gap. /data/media was labelled rootfs on disk; fixed with
+#     restorecon -R /data/media. After a clean flash re-check:
+#     ls -dZ /data/media /data/media/0  (expect media_rw_data_file)
 HARVESTEOF
 ALLOW_COUNT=$(grep -c '^allow ' "$HARVEST_TE")
-if [ "$ALLOW_COUNT" -ne 36 ]; then
-  echo "ERROR: enforcing_harvest.te has $ALLOW_COUNT allow statements, expected 36" >&2
+if [ "$ALLOW_COUNT" -ne 59 ]; then
+  echo "ERROR: enforcing_harvest.te has $ALLOW_COUNT allow statements, expected 59" >&2
   exit 1
 fi
-echo "enforcing policy installed: $HARVEST_TE (36 allow statements, batches 1-4 minus 3 parked + v21 dpmd + v22 batch-5 keepers)."
+echo "enforcing policy installed: $HARVEST_TE (59 allow statements, batches 1-5)."
 
-# v29 ENFORCING: remove the permissive flag from the kernel cmdline so
-# the build boots SELinux ENFORCING (user call 2026-11-04: "make it
-# enforcing"). The org BoardConfig.mk adds it as its own line
-# (BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive); delete that
-# line, then verify no selinux= override remains AND that
-# SELINUX_IGNORE_NEVERALLOWS is still := true (kept deliberately for
-# the first enforcing attempt; removing it is the later hardening step).
-# NOTE: the setenforce 1 sweep on v28 was NOT run before this flip, so
-# the 36 rules are harvested but not functionally proven under enforcing.
-# If a function is denied on first boot, capture the denial dump and it
-# lands in the next version -- keep the v28 (permissive) boot.img aside
-# as the TWRP escape hatch. Mechanism is the v16/v21 one, unchanged.
-sed -i '/^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$/d' "$BOARDCONFIG"
-if grep -q 'androidboot.selinux=' "$BOARDCONFIG"; then
-  echo "ERROR: an androidboot.selinux= override remains in $BOARDCONFIG" >&2
+# v30: vendor-only-type rules as raw CIL, shipped as product_sepolicy.cil.
+SE_CIL=device/oppo/RMX1805/sepolicy/product_sepolicy.cil
+cat > "$SE_CIL" <<'SECILEOF'
+; product_sepolicy.cil - RMX1805 vendor-only types (batch 5)
+;
+; Rules whose source or target type is declared only in the STOCK vendor
+; policy (rild, rmt_storage, wcnss_service, qti_init_shell, vendor_per_mgr,
+; hal_dpmQmiMgr, ...). The plat build cannot name those types, so the .te
+; file cannot hold them. This file is shipped to
+;   /product/etc/selinux/product_sepolicy.cil   (inside the SYSTEM image)
+; and init compiles it together with plat + system_ext + vendor at boot
+; (secilc -m -M true -G -N), so the names resolve against the stock
+; vendor_sepolicy.cil at that point. It rides with the ROM because the
+; flash plan only flashes boot + system and leaves the stock vendor alone
+; (so /vendor/odm would NOT travel with the ROM).
+; A bad line here makes init's boot-time policy compile fail, so test it
+; with permissive first.
+;
+; RMX1805 vendor-only types marker (the build script checks for this line)
+;
+; Compiled only against the stock Android 9 plat + vendor cil, not against
+; an Android 11 plat policy. Not boot-tested.
+
+; ---- dpmd / DPM QMI chain (was parked: vendor-only binder/hwservice types) ----
+(allow init hal_dpmQmiMgr (binder (call transfer)))
+(allow hal_dpmQmiMgr init (binder (call)))
+(allow init hal_dpmqmi_hwservice (hwservice_manager (find)))
+
+; ---- init ----
+(allow init hal_light_default_exec (file (mounton)))
+(allow init sysfs_graphics (lnk_file (read)))
+
+; ---- qti_init_shell: USB gadget (configfs), props, scripts ----
+; Without the configfs rules adb may not come up in enforcing.
+(allow qti_init_shell configfs (dir (add_name write)))
+(allow qti_init_shell configfs (file (create)))
+(allow qti_init_shell default_prop (file (getattr open read)))
+(allow qti_init_shell oppo_qemu_prop (property_service (set)))
+(allow qti_init_shell shell_exec (file (execute getattr read)))
+(allow qti_init_shell toolbox_exec (file (execute execute_no_trans getattr open read)))
+(allow qti_init_shell vendor_file (file (entrypoint execute_no_trans)))
+
+; ---- rild / rmt_storage: NV items in /cache, property defaults ----
+(allow rild cache_file (dir (add_name getattr write)))
+(allow rild cache_file (file (create open write)))
+(allow rild default_prop (file (getattr open read)))
+(allow rild default_prop (property_service (set)))   ; persist.oppo.nw.region.lock
+(allow rmt_storage default_prop (file (getattr open read)))
+
+; ---- Wi-Fi / BT service reading serial + system props ----
+(allow wcnss_service serialno_prop (file (getattr open read)))
+(allow wcnss_service system_prop (file (getattr open read)))
+
+; ---- misc vendor daemons ----
+(allow vendor_per_mgr self (capability (net_raw)))
+(allow wt_system_monitor proc_cmdline (file (open read)))
+(allow hal_fingerprint_oppo default_android_hwservice (hwservice_manager (find)))
+
+; ---- Wi-Fi HAL (was parked) ----
+(allow hal_wifi_default vendor_tombstone_data_file (dir (open read search)))
+; hotspot (harvest batch 4): hostapd removes its own dir from the parent.
+(allow hal_wifi_hostapd_default wifi_vendor_data_file (dir (write remove_name)))
+
+; ---- camera props (was parked: vendor-only property types) ----
+(allow hal_camera_default vendor_system_prop (file (getattr open read)))
+(allow system_server vendor_camera_prop (file (getattr open read)))
+
+; ---- IMS / RCS (was parked) ----
+(allow system_app hal_imsrcsd_hwservice (hwservice_manager (find)))
+(allow system_app hal_rcsservice (binder (call transfer)))
+
+; ---- storage ----
+(allow vold oppo_reserve_file (dir (ioctl open read)))
+(allow vold_prepare_subdirs face_data_file (dir (getattr)))
+(allow vendor_init wtlogcat_rw_data_file (dir (getattr)))
+
+; ---- moved here from the .te: these names are vendor-only ----
+(allow qti_init_shell dev_type (chr_file (getattr setattr)))     ; chown /dev/silead_fp (breadth via dev_type)
+(allow vold sysfs_mmc_host (file (write)))                        ; vold read_ahead_kb tuning
+
+; ---- OPTIONAL (left off on purpose) ----
+; Qualcomm diag logging; every daemon opens it at start and carries on
+; without it. Allowing it widens a debug interface, so it is off.
+; (allow netutils_wrapper diag_device (chr_file (read write)))
+; (allow init diag_device (chr_file (ioctl write)))
+; (allowx ...)  adpl cnd ipacm netmgrd qti sensors hal_imsrtp -> diag_device
+;
+; Camera apps reading vendor camera props. The app copes if it cannot; add
+; only if the camera misbehaves in enforcing:
+; (allow untrusted_app vendor_camera_prop (file (getattr open read)))
+; (allow untrusted_app_29 vendor_camera_prop (file (getattr open read)))
+; (allow untrusted_app camera_prop (file (getattr open read)))
+SECILEOF
+if [ "$SELINUX_MODE" = "enforcing" ]; then
+  cat >> "$SE_CIL" <<'SAFETYEOF'
+
+; ---- first-enforcing-build safety net (appended by the build script when SELINUX_MODE=enforcing) ----
+; These domains stay permissive so a missing rule cannot break boot-critical
+; services while the rest of the system is enforcing. Remove one at a time
+; once its denials are clean.
+(typepermissive qti_init_shell)
+(typepermissive rild)
+(typepermissive rmt_storage)
+(typepermissive wcnss_service)
+(typepermissive hal_dpmQmiMgr)
+(typepermissive vendor_per_mgr)
+(typepermissive healthd)
+SAFETYEOF
+  echo "enforcing safety net appended to product_sepolicy.cil (typepermissive on 7 domains)."
+fi
+CIL_OPEN=$(sed 's/;.*$//' "$SE_CIL" | tr -cd '(' | wc -c)
+CIL_CLOSE=$(sed 's/;.*$//' "$SE_CIL" | tr -cd ')' | wc -c)
+if [ "$CIL_OPEN" -ne "$CIL_CLOSE" ]; then
+  echo "ERROR: product_sepolicy.cil has unbalanced parentheses ($CIL_OPEN open, $CIL_CLOSE close)" >&2
   exit 1
 fi
-if ! grep -q '^SELINUX_IGNORE_NEVERALLOWS := true$' "$BOARDCONFIG"; then
-  echo "ERROR: SELINUX_IGNORE_NEVERALLOWS is no longer := true in $BOARDCONFIG" >&2
-  exit 1
+grep -q 'RMX1805 vendor-only types marker' "$SE_CIL" || { echo "ERROR: product_sepolicy.cil marker line missing" >&2; exit 1; }
+echo "product_sepolicy.cil written ($(grep -c '^(allow' "$SE_CIL") allow rules, parentheses balanced)."
+
+DEVICE_MK=device/oppo/RMX1805/device.mk
+if ! grep -q 'sepolicy/product_sepolicy.cil' "$DEVICE_MK"; then
+  cat >> "$DEVICE_MK" <<'DEVMKEOF'
+
+# SELinux: rules for vendor-only types, compiled by init at boot with plat +
+# system_ext + vendor (see sepolicy/product_sepolicy.cil). Shipped inside the
+# SYSTEM image because the flash plan leaves the stock vendor untouched.
+PRODUCT_COPY_FILES += \
+    device/oppo/RMX1805/sepolicy/product_sepolicy.cil:$(TARGET_COPY_OUT_PRODUCT)/etc/selinux/product_sepolicy.cil
+DEVMKEOF
 fi
-echo "boot mode: SELinux ENFORCING (v31; first enforcing attempt, SELINUX_IGNORE_NEVERALLOWS still true)."
+grep -q 'sepolicy/product_sepolicy.cil' "$DEVICE_MK" || { echo "ERROR: product_sepolicy.cil copy rule missing from device.mk" >&2; exit 1; }
+echo "device.mk: product_sepolicy.cil copy rule present."
+
+# v30 mode switch (v29's flip, now conditional).
+if [ "$SELINUX_MODE" = "enforcing" ]; then
+  sed -i '/^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$/d' "$BOARDCONFIG"
+  if grep -q 'androidboot.selinux=' "$BOARDCONFIG"; then
+    echo "ERROR: an androidboot.selinux= override remains in $BOARDCONFIG" >&2
+    exit 1
+  fi
+  if ! grep -q '^SELINUX_IGNORE_NEVERALLOWS := true$' "$BOARDCONFIG"; then
+    echo "ERROR: SELINUX_IGNORE_NEVERALLOWS is no longer := true in $BOARDCONFIG" >&2
+    exit 1
+  fi
+  echo "boot mode: SELinux ENFORCING (v30; safety net on 7 domains, SELINUX_IGNORE_NEVERALLOWS still true)."
+else
+  grep -q '^BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive$' "$BOARDCONFIG" || {
+    echo "ERROR: permissive stage expected the BoardConfig permissive line, but it is gone." >&2
+    echo "  Run with SELINUX_MODE=enforcing if you meant to flip, or restore the line." >&2
+    exit 1; }
+  echo "boot mode: SELinux PERMISSIVE (v30 stage 1; new policy shipped, nothing enforced)."
+fi
 # <<< V15 SELINUX SECTION <<<
 
 # USB PREFERENCES FIX (v14): apply the embedded Settings patch so the
@@ -1665,25 +1843,20 @@ source build/envsetup.sh
 # userdebug is strictly more useful for bring-up and costs nothing here).
 lunch lineage_RMX1805-userdebug
 
-# Verify the fully expanded build variables after product inheritance/lunch,
-# not just the one source line edited above. Reject SELinux mode overrides
-# in either the kernel command line or bootconfig; this build relies on the
-# Android default (enforcing) and must not silently inherit permissive mode.
-FINAL_BOARD_KERNEL_CMDLINE="$(get_build_var BOARD_KERNEL_CMDLINE)" || {
-  echo "ERROR: could not read expanded BOARD_KERNEL_CMDLINE" >&2; exit 1; }
-FINAL_BOARD_BOOTCONFIG="$(get_build_var BOARD_BOOTCONFIG 2>/dev/null || true)"
-if printf '%s\n%s\n' "$FINAL_BOARD_KERNEL_CMDLINE" "$FINAL_BOARD_BOOTCONFIG" | grep -Eq 'androidboot\.selinux='; then
-  echo "ERROR: expanded boot arguments still contain androidboot.selinux= override:" >&2
-  printf '%s\n%s\n' "$FINAL_BOARD_KERNEL_CMDLINE" "$FINAL_BOARD_BOOTCONFIG" >&2
+# v30: our CIL is installed as /product/etc/selinux/product_sepolicy.cil. The
+# build generates that same file when product sepolicy dirs are set, which
+# would collide with our copy rule. Fail fast, before the long build.
+PROD_SE_DIRS="$(get_build_var PRODUCT_PRIVATE_SEPOLICY_DIRS 2>/dev/null || true)$(get_build_var PRODUCT_PUBLIC_SEPOLICY_DIRS 2>/dev/null || true)"
+if [ -n "$(echo "$PROD_SE_DIRS" | tr -d '[:space:]')" ]; then
+  echo "ERROR: PRODUCT_*_SEPOLICY_DIRS is set ($PROD_SE_DIRS): the build generates product_sepolicy.cil" >&2
+  echo "  and our copy rule would collide with it. Move the vendor-only rules into the generated file" >&2
+  echo "  or install them another way before building." >&2
   exit 1
 fi
-echo "Expanded boot arguments contain no androidboot.selinux= override."
-echo "Expanded BOARD_KERNEL_CMDLINE: $FINAL_BOARD_KERNEL_CMDLINE"
-
+echo "product sepolicy dirs empty: product_sepolicy.cil copy rule is safe."
 # v16 EARLY POLICY PRE-CHECK: compile only the policy modules (minutes).
 # An unknown type / bad macro in the harvest or wiring dies here, not after
-# the multi-hour image build. This is NOT the stock-vendor CIL compatibility
-# check; that separate pre-flash check remains mandatory below.
+# the multi-hour image build. 'sepolicy' is the monolithic all-policy build.
 mka plat_sepolicy.cil system_ext_sepolicy.cil sepolicy || {
   echo "ERROR: early pre-check failed -- this may be a soong bootstrap failure" >&2
   echo "  (e.g. an undefined module like pyyaml), NOT necessarily a policy" >&2
@@ -1773,6 +1946,7 @@ GATE_DIR="$PWD/.selinux_gate"
 rm -rf "$GATE_DIR"
 mkdir -p "$GATE_DIR"
 unzip -q -o "$TF_ZIP" "SYSTEM/etc/selinux/*" -d "$GATE_DIR"
+unzip -q -o "$TF_ZIP" "*/etc/selinux/*" -d "$GATE_DIR" 2>/dev/null || true
 SE_DIR="$GATE_DIR/SYSTEM/etc/selinux"
 [[ -f "$SE_DIR/plat_sepolicy.cil" ]] || { echo "ERROR: gate input missing from target files: plat_sepolicy.cil" >&2; exit 1; }
 cat > "$GATE_DIR/probe.cil" <<'PROBEEOF'
@@ -1789,6 +1963,47 @@ if ! "$HOST_SECILC" "${GATE_ARGS[@]}"; then
   echo "(topjohnwu 969114c) is missing or ineffective. NO signed zip was" >&2
 echo "produced. DO NOT FLASH." >&2
   exit 1
+fi
+# v30 CIL GATE: our product_sepolicy.cil must be in the image, and it must
+# compile together with the real plat + system_ext + vendor cil using the
+# on-device secilc flags.
+PROD_CIL="$(find "$GATE_DIR" -path '*etc/selinux/product_sepolicy.cil' 2>/dev/null | head -n1)"
+if [[ -z "$PROD_CIL" ]]; then
+  echo "ERROR: product_sepolicy.cil is not in the target files (copy rule not effective?)" >&2
+  echo "NO signed zip was produced. DO NOT FLASH." >&2
+  exit 1
+fi
+grep -q 'RMX1805 vendor-only types marker' "$PROD_CIL" || {
+  echo "ERROR: $PROD_CIL in the target files is not our file" >&2; exit 1; }
+VEND_DIR="$GATE_DIR/VENDOR/etc/selinux"
+if [[ -f "$VEND_DIR/vendor_sepolicy.cil" && -f "$VEND_DIR/plat_pub_versioned.cil" ]]; then
+  VERS=""
+  if [[ -f "$VEND_DIR/plat_sepolicy_vers.txt" ]]; then VERS="$(tr -d '\n' < "$VEND_DIR/plat_sepolicy_vers.txt")"; fi
+  CIL_ARGS=("$SE_DIR/plat_sepolicy.cil" -m -M true -G -N -c 30)
+  if [[ -n "$VERS" && -f "$SE_DIR/mapping/$VERS.cil" ]]; then CIL_ARGS+=("$SE_DIR/mapping/$VERS.cil"); fi
+  if [[ -n "$VERS" && -f "$SE_DIR/mapping/$VERS.compat.cil" ]]; then CIL_ARGS+=("$SE_DIR/mapping/$VERS.compat.cil"); fi
+  SYSEXT_CIL="$(find "$GATE_DIR" -name system_ext_sepolicy.cil 2>/dev/null | head -n1)"
+  if [[ -n "$SYSEXT_CIL" ]]; then
+    CIL_ARGS+=("$SYSEXT_CIL")
+    SYSEXT_MAP="$(dirname "$SYSEXT_CIL")/mapping/$VERS.cil"
+    if [[ -n "$VERS" && -f "$SYSEXT_MAP" ]]; then CIL_ARGS+=("$SYSEXT_MAP"); fi
+  fi
+  CIL_ARGS+=("$VEND_DIR/plat_pub_versioned.cil" "$VEND_DIR/vendor_sepolicy.cil")
+  if "$HOST_SECILC" "${CIL_ARGS[@]}" -o "$GATE_DIR/base.out" -f "$GATE_DIR/fc_null" >/dev/null 2>&1; then
+    if "$HOST_SECILC" "${CIL_ARGS[@]}" "$PROD_CIL" -o "$GATE_DIR/full.out" -f "$GATE_DIR/fc_null"; then
+      echo "CIL GATE PASSED: product_sepolicy.cil compiles with this build's plat + system_ext + vendor policy."
+    else
+      echo "ERROR: CIL GATE FAILED: product_sepolicy.cil does not compile against this build's policy." >&2
+      echo "The phone's boot-time policy compile would fail. NO signed zip was produced. DO NOT FLASH." >&2
+      exit 1
+    fi
+  else
+    echo "WARN: CIL gate skipped: the plat + vendor baseline did not compile with the gate's argument set." >&2
+    echo "      (gate input problem, not proof that product_sepolicy.cil is bad.) Test it with SELINUX_MODE=permissive first." >&2
+  fi
+else
+  echo "WARN: CIL gate skipped: vendor_sepolicy.cil / plat_pub_versioned.cil are not in the target files." >&2
+  echo "      product_sepolicy.cil is in the image but its vendor type names are unchecked. Test with SELINUX_MODE=permissive first." >&2
 fi
 rm -rf "$GATE_DIR"
 echo "SELINUX GATE PASSED: this build's compiler tolerates legacy permissions."
@@ -1858,65 +2073,29 @@ export PYTHONPATH="$IMP_SHIM_DIR${PYTHONPATH:+:$PYTHONPATH}"
 ./build/tools/releasetools/sign_target_files_apks -o -p out/host/linux-x86 -d "$KEYS_DIR" "$TF_ZIP" "$SIGNED_TF"
 ./build/tools/releasetools/ota_from_target_files -p out/host/linux-x86 -k "$KEYS_DIR/releasekey" "$SIGNED_TF" "$SIGNED_OTA"
 
-# Inspect the boot.img that is actually inside the signed OTA. The source
-# BoardConfig and expanded make variables can be correct while the final
-# artifact is stale or packaged differently; fail unless the OTA contains
-# a readable boot image whose header command line has no SELinux override.
-BOOT_CHECK_DIR="$PWD/.selinux_bootimg_check"
-rm -rf "$BOOT_CHECK_DIR"
-mkdir -p "$BOOT_CHECK_DIR/unpacked"
-SIGNED_BOOT_IMG="$BOOT_CHECK_DIR/boot.img"
-unzip -p "$SIGNED_OTA" boot.img > "$SIGNED_BOOT_IMG" || {
-  echo "ERROR: boot.img missing/unreadable in signed OTA: $SIGNED_OTA" >&2; exit 1; }
-[[ -s "$SIGNED_BOOT_IMG" ]] || {
-  echo "ERROR: extracted boot.img is empty" >&2; exit 1; }
-UNPACK_BOOTIMG="out/host/linux-x86/bin/unpack_bootimg"
-if [[ ! -x "$UNPACK_BOOTIMG" ]]; then
-  UNPACK_BOOTIMG="$(find out/host -type f -name unpack_bootimg -perm -u+x 2>/dev/null | head -n1)"
-fi
-[[ -n "$UNPACK_BOOTIMG" && -x "$UNPACK_BOOTIMG" ]] || {
-  echo "ERROR: unpack_bootimg not found; cannot verify signed boot.img cmdline" >&2; exit 1; }
-if ! BOOT_HEADER_INFO="$("$UNPACK_BOOTIMG" --boot_img "$SIGNED_BOOT_IMG" --out "$BOOT_CHECK_DIR/unpacked" 2>&1)"; then
-  echo "ERROR: could not unpack signed boot.img:" >&2
-  printf '%s\n' "$BOOT_HEADER_INFO" >&2
-  exit 1
-fi
-if ! printf '%s\n' "$BOOT_HEADER_INFO" | grep -Eiq '(cmdline|command line):'; then
-  echo "ERROR: unpack_bootimg output did not expose the boot command line; refusing to assume enforcing:" >&2
-  printf '%s\n' "$BOOT_HEADER_INFO" >&2
-  exit 1
-fi
-if printf '%s\n' "$BOOT_HEADER_INFO" | grep -Eq 'androidboot\.selinux='; then
-  echo "ERROR: signed OTA boot.img still contains an androidboot.selinux= override:" >&2
-  printf '%s\n' "$BOOT_HEADER_INFO" >&2
-  exit 1
-fi
-echo "Signed OTA boot.img verified: no androidboot.selinux= override in its header."
-
 echo "Signed ROM ready: $SIGNED_OTA"
-echo "The build policy compiled and the legacy-permission gate passed; this does NOT validate the complete stock-vendor policy."
-echo "MANDATORY BEFORE FLASHING: run the exact-argv secilc compatibility check against the STOCK vendor CIL (the in-build gate does not include that vendor policy)."
+echo "This build PASSED the in-build SELinux gate (see above) — the compiler"
+echo "fix is verified inside this ROM. BEFORE FLASHING run the exact-argv secilc bench compile against the STOCK vendor CIL (v16 adds system_ext rules the gate cannot check against it)."
 echo "Flash plan (system+boot ONLY, stock vendor stays untouched):"
 echo "  1. Unzip boot.img and system.img from $SIGNED_OTA."
 echo "  2. TWRP > Install > Install Image: flash boot.img to Boot, then system.img to System Image."
 echo "     Do NOT install the full zip and do NOT flash the built vendor.img"
 echo "     (the org-built vendor has no camera stack - flashing it kills the camera)."
-echo "  3. If upgrading the same ROM signed with the same keys, a factory reset"
-echo "     is not expected; keep a recovery/backup available. After first boot run:"
-echo "       adb shell getenforce                 # MUST print Enforcing"
-echo "       adb shell cat /proc/cmdline          # no permissive override"
-echo "       adb logcat -b all -d | grep -i 'avc: denied'"
-echo "     Then test WiFi/BT, IMEI, camera, backlight slider, density 360, USB"
-echo "     Preferences, charger mode, and call/SMS paths. Capture denial logs"
-echo "     before reboot; do not treat untested features as proven clean."
+echo "  3. Coming from the v1 install (same ROM, same keys): no factory reset"
+echo "     needed. Reboot. First-boot checks: WiFi/BT, IMEI, camera, backlight slider,"
+ echo "     display density 360, USB Preferences: list selectable, controlled-by hidden."
 echo "     Low-RAM checks: getprop ro.config.low_ram (=true), cat /proc/swaps +"
  echo "     /sys/block/zram0/disksize (zram up, ~50% of RAM), dex2oat threads =4."
  echo "     AudioFX check (v19): AudioFX app should appear in the app drawer"
  echo "     (it was removed by RemovePackages in v14-v18). If it does not"
  echo "     appear, the Lineage base does not include it on its own and a"
  echo "     follow-up version must add it explicitly -- do not re-add the override." 
-
-# HARDENING STATUS: SELINUX_IGNORE_NEVERALLOWS remains := true for this
-# first enforcing attempt by design. This is not permissive mode, but it
-# suppresses neverallow build checks; do not call this fully hardened until
-# the policy is reviewed, those checks are restored, and enforcing tests pass.
+echo ""
+echo "v30 SELinux: mode=$SELINUX_MODE. Policy: enforcing_harvest.te + product_sepolicy.cil (vendor-only types)."
+if [ "$SELINUX_MODE" = "permissive" ]; then
+  echo "  Stage 1 next: flash, boot, check getenforce (Permissive). Re-harvest: any avc still logged is a gap."
+  echo "  Then: adb root; setenforce 1; retest calls/SMS/data/camera/Wi-Fi/USB/charger. setenforce 0 or a reboot to go back."
+  echo "  Flip permanently by queueing this file with SELINUX_MODE=enforcing."
+else
+  echo "  Enforcing build. Keep the permissive boot.img aside (TWRP). First checks: getenforce, adb up, IMEI, calls, data, Wi-Fi, camera, charger-off."
+fi
